@@ -194,7 +194,7 @@ class DataTests(unittest.TestCase):
 
     def test_duplicates_rejected(self):
         a, b = self.raw(1), self.raw(2)
-        with self.assertRaisesRegex(ValueError, "idénticos"):
+        with self.assertRaisesRegex(ValueError, "identical"):
             DataProcessor(2, 0).prepare(a, b, a)
 
     def test_guard_chronological(self):

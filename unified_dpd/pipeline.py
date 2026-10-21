@@ -9,6 +9,7 @@ import shutil
 import numpy as np
 from . import __version__
 from .search import TrainingBICSearch
+from .layout import create_run_directories, resolve_saved_models
 from . import plots
 from iq_processor.models import ProcessingConfig
 from iq_processor.readers import CSVReader, InputSCSReader, MetadataResolver, fingerprint
@@ -167,13 +168,13 @@ def export_signals(run, config, aligned, model_names, symbol_indices):
     cfg = config["export"]
     fs = 1/np.median(np.diff(aligned.time))
     reports = {}
-    for name in ["sin_dpd", *model_names]:
-        dest = run/"exports"/name
+    for name in ["no_dpd", *model_names]:
+        dest = run/"outputs"/name
         dest.mkdir(parents=True)
-        if name == "sin_dpd":
+        if name == "no_dpd":
             value = aligned.x.copy(); indices = np.arange(len(value)); past = future = 0
         else:
-            model = DPDModel(run/"models"/f"{name}.json", boundary=cfg["boundary"])
+            model = DPDModel(run/"model_results"/f"{name}.json", boundary=cfg["boundary"])
             value = model.apply(aligned.x)
             indices = model.original_indices
             past, future = model.past, model.future
@@ -191,8 +192,8 @@ def export_signals(run, config, aligned, model_names, symbol_indices):
             zeroed_count=len(affected), before=signal_stats(original), after=signal_stats(modified),
             past_samples=past, future_samples=future, boundary=cfg["boundary"], offline_lookahead_s=future/fs,
             padding_affected_output_indices=(sorted(set(range(min(past,len(value)))) | set(range(max(0,len(value)-future),len(value)))) if cfg["boundary"]=="zero_pad" else []),
-            model_sha256=digest(run/"models"/f"{name}.json") if name!="sin_dpd" else None,
-            reference_sha256=digest(run/"preprocessed"/"validation"/"aligned_waveform.csv"),
+            model_sha256=digest(run/"model_results"/f"{name}.json") if name!="no_dpd" else None,
+            reference_sha256=digest(run/"diagnostics"/"validation"/"aligned_waveform.csv"),
             status="exported_not_simulated")
         record["I_sha256"] = digest(dest/"I.txt"); record["Q_sha256"] = digest(dest/"Q.txt")
         JSONWriter.write(record, dest/"metadata.json")
@@ -207,16 +208,18 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
     stamp = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%S_%fZ")
     run = out/stamp
     run.mkdir(parents=True, exist_ok=False)
-    manifest = dict(schema_version="2.0", version=__version__, created_at_utc=stamp, status="running",
+    layout = create_run_directories(run)
+    manifest = dict(schema_version="2.1", version=__version__, created_at_utc=stamp, status="running",
+        artifact_language="en", directories=layout,
         config=config, python=platform.python_version(), numpy=np.__version__, stage=stage,
         selection_scope="validation used to choose winner; no independent test; no simulated PA improvement claim")
     JSONWriter.write(manifest, run/"manifest.json")
-    print(f"Resultados: {run}", flush=True)
+    print(f"Results: {run}", flush=True)
     try:
         results = {}
         for role in ("training", "validation"):
-            print(f"Preprocesando {role}...", flush=True)
-            results[role] = preprocess(path.parent/config[f"{role}_dir"], role, run/"preprocessed"/role, config, make_plots)
+            print(f"Preprocessing {role}...", flush=True)
+            results[role] = preprocess(path.parent/config[f"{role}_dir"], role, run/"diagnostics"/role, config, make_plots)
         a, b = (results[r].alignment for r in ("training", "validation"))
         if np.array_equal(a.x, b.x) and np.array_equal(a.y, b.y):
             raise ValueError("Training and validation duplicate the same signals")
@@ -227,27 +230,26 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
         if not np.isclose(np.median(np.diff(a.time)), np.median(np.diff(b.time)), rtol=1e-5, atol=1e-18):
             raise ValueError("Incompatible training/validation sample periods")
         manifest["datasets"] = {r: dict(sources=results[r].metadata["processing"]["original_sources"],
-            aligned_sha256=digest(run/"preprocessed"/r/"aligned_waveform.csv"), aligned_samples=len(results[r].alignment.x)) for r in results}
+            aligned_sha256=digest(run/"diagnostics"/r/"aligned_waveform.csv"), aligned_samples=len(results[r].alignment.x)) for r in results}
         manifest["warnings"] = ["Different declared seeds do not prove statistical independence of periodic PN sequences."]
         if stage == "preprocess":
             manifest["status"] = "completed"
         else:
-            (run/"models").mkdir()
             models = {}
             if models_dir:
                 source = Path(models_dir).resolve()
-                old = JSONWriter.read(source.parent/"manifest.json" if source.name == "models" else source/"manifest.json")
-                source_models = source if source.name == "models" else (source/"models" if (source/"models").is_dir() else source)
+                source_models, source_manifest = resolve_saved_models(source)
+                old = JSONWriter.read(source_manifest)
                 gain = old["gain"]
                 if not np.isscalar(gain) or not np.isfinite(gain) or abs(gain)==0:
                     raise ValueError("Saved gain must be finite and nonzero")
                 for name in policies:
-                    shutil.copyfile(source_models/f"{name}.json", run/"models"/f"{name}.json")
-                    models[name] = JSONWriter.load_model(run/"models"/f"{name}.json")
+                    shutil.copyfile(source_models/f"{name}.json", run/"model_results"/f"{name}.json")
+                    models[name] = JSONWriter.load_model(run/"model_results"/f"{name}.json")
                     if models[name].model_name != name:
                         raise ValueError("Model filename/family mismatch")
                 past = max(support(m)[0] for m in models.values()); future = max(support(m)[1] for m in models.values())
-                manifest["reused_models"] = {"source": str(source), "manifest_sha256": digest(source.parent/"manifest.json" if source.name=="models" else source/"manifest.json"),
+                manifest["reused_models"] = {"source": str(source), "manifest_sha256": digest(source_manifest),
                     "note": "Original training gain reused; models not retrained; see source manifest for training provenance"}
             else:
                 past, future = common_context(policies, config["search"]["max_basis_terms"])
@@ -264,15 +266,15 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
                 for name, policy in policies.items():
                     print(f"BIC training: {name}...", flush=True)
                     result = TrainingBICSearch(TRAINERS[name](**config["numerics"]), policy, estimator, config["search"]).run(train)
-                    JSONWriter.write(result, run/"models"/f"{name}.json")
+                    JSONWriter.write(result, run/"model_results"/f"{name}.json")
                     models[name] = result["model"]
-                    print(f"  {name}: {result['best_config']} · {result['optimization_trace']['stop_reason']}", flush=True)
+                    print(f"  {name}: {result['best_config']} - {result['optimization_trace']['stop_reason']}", flush=True)
             rows, predictions, symbol_predictions = [], {}, {}
             symbol_mask = np.isin(validation.indices, results["validation"].selection.indices)
             symbols = validation.indices[symbol_mask]
             if len(symbols)<1:
                 raise ValueError("No common symbols after guards")
-            comparison = run/"comparison"; comparison.mkdir()
+            comparison = run/"model_comparisons"
             for name, model in models.items():
                 predicted = model.predict(validation)
                 full_error = normalized_error(validation.target, predicted)
@@ -281,7 +283,7 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
                     nmse_symbols_db=error_to_db(symbol_error), relative_rms_percent=100*np.sqrt(full_error),
                     symbol_relative_rms_percent=100*np.sqrt(symbol_error), num_coefficients=len(model.coefficients),
                     samples=len(validation.indices), symbols=len(symbols), hardware=asdict(estimator.estimate(model, model.config)),
-                    model_sha256=digest(run/"models"/f"{name}.json")))
+                    model_sha256=digest(run/"model_results"/f"{name}.json")))
                 predictions[name]=predicted; symbol_predictions[name]=predicted[symbol_mask]
                 write_csv(comparison/f"{name}_waveform.csv", [validation.indices,b.time[validation.indices],validation.target.real,validation.target.imag,predicted.real,predicted.imag],
                           ["aligned_index","time_s","I_reference_V","Q_reference_V","I_reconstructed_V","Q_reconstructed_V"])
@@ -297,13 +299,13 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
             exports = export_signals(run,config,b,list(models) if config["export"]["models"]=="all" else [winner],results["validation"].selection.indices) if stage=="all" else {}
             manifest.update(status="completed", winner=winner, selection_metric="validation_nmse_waveform_db", exported=list(exports),
                 zeroed_samples={n:r["zeroed_count"] for n,r in exports.items()})
-            lines=["# Comparación de reconstrucción", "", "Selección sobre validación completa; sin test independiente.",
-                   f"Ganador por NMSE de forma de onda: **{winner}**.", "", "| Modelo | NMSE onda (dB) | NMSE símbolos (dB) | Coeficientes |", "|---|---:|---:|---:|"]
+            lines=["# Reconstruction comparison", "", "Selection uses the full usable validation set; no independent test set.",
+                   f"Winner by waveform NMSE: **{winner}**.", "", "| Model | Waveform NMSE (dB) | Symbol NMSE (dB) | Coefficients |", "|---|---:|---:|---:|"]
             lines += [f"| {r['model']} | {r['nmse_waveform_db']:.4f} | {r['nmse_symbols_db']:.4f} | {r['num_coefficients']} |" for r in rows]
-            lines += ["", "Las constelaciones muestran solo símbolos. Los modelos usan la forma de onda completa.",
-                      "PWL: F(x), límite aplicado después de escala; no son resultados de PA con DPD.",
-                      "La mejora del PA requiere simular en Cadence y analizar la señal de retorno."]
-            (run/"report.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
+            lines += ["", "Constellations show symbol instants only. Models use the full waveform.",
+                      "PWL: F(x), with voltage limiting after scaling; these are not PA simulation results with DPD.",
+                      "PA improvement must be measured by simulating in Cadence and analyzing the returned signal."]
+            (comparison/"report.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
         JSONWriter.write(manifest,run/"manifest.json")
         JSONWriter.write(dict(directory=str(run),status=manifest["status"]),out/"latest_run.json")
     except Exception as exc:

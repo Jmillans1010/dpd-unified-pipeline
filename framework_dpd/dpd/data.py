@@ -8,7 +8,7 @@ from .contracts import AlignedInputData, DataPartition, RawIQData
 
 
 class CSVReader:
-    """Solo lectura del contrato exportado por iq_processor."""
+    """Read-only access to the data contract exported by iq_processor."""
 
     def read(self, directory: str | Path) -> RawIQData:
         directory = Path(directory)
@@ -16,7 +16,7 @@ class CSVReader:
         table = np.genfromtxt(path, delimiter=",", names=True, encoding="utf-8-sig")
         required = {"time_reference_s", "I_in", "Q_in", "I_out", "Q_out"}
         if not required.issubset(table.dtype.names or ()):
-            raise ValueError(f"Columnas ausentes en {path}: {required}")
+            raise ValueError(f"Missing columns in {path}: {required}")
         metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8-sig"))
         return RawIQData(np.atleast_1d(table["time_reference_s"]),
                          np.atleast_1d(table["I_in"] + 1j * table["Q_in"]),
@@ -29,26 +29,26 @@ class DataProcessor:
         self.past, self.future = past, future
         self.guard = max(past, future) if guard is None else guard
         if min(past, future, self.guard) < 0 or self.guard < max(past, future):
-            raise ValueError("Guarda insuficiente para la memoria máxima del experimento.")
+            raise ValueError("The guard interval is insufficient for the maximum experiment memory.")
 
     @staticmethod
     def validate(raw: RawIQData) -> None:
         if not (len(raw.x) == len(raw.y) == len(raw.time)) or len(raw.x) < 3:
-            raise ValueError("Longitudes IQ inválidas.")
+            raise ValueError("Invalid IQ lengths.")
         if any(not np.all(np.isfinite(v)) for v in (raw.x, raw.y, raw.time)):
-            raise ValueError("Datos IQ no finitos.")
+            raise ValueError("Nonfinite IQ data.")
         steps = np.diff(raw.time)
         if np.any(steps <= 0) or not np.allclose(steps, np.median(steps), rtol=1e-5, atol=1e-18):
-            raise ValueError("La rejilla temporal debe ser creciente y uniforme.")
+            raise ValueError("The time grid must be increasing and uniform.")
 
     @staticmethod
     def estimate_gain(x_train: np.ndarray, y_train: np.ndarray) -> complex:
         energy = np.vdot(x_train, x_train).real
         if energy <= np.finfo(float).tiny:
-            raise ValueError("Training sin energía.")
+            raise ValueError("The training signal has no energy.")
         gain = complex(np.vdot(x_train, y_train) / energy)
         if abs(gain) <= np.finfo(float).tiny or not np.isfinite(gain):
-            raise ValueError("Ganancia compleja nula/no finita.")
+            raise ValueError("The complex gain is zero or nonfinite.")
         return gain
 
     @staticmethod
@@ -56,10 +56,10 @@ class DataProcessor:
         return y / gain
 
     def align_signals(self, raw: RawIQData, max_delay: int = 128) -> RawIQData:
-        """Para nuevos registros sin alinear; los CSV entregados no pasan por aquí."""
+        """Align new recordings; already aligned CSV inputs bypass this method."""
         self.validate(raw)
         if max_delay < 0 or max_delay >= len(raw.x) // 2:
-            raise ValueError("Límite de alineación inválido.")
+            raise ValueError("Invalid alignment limit.")
         def slices(delay: int) -> tuple[slice, slice]:
             n = len(raw.x)
             return slice(max(0, -delay), min(n, n-delay)), slice(max(0, delay), min(n, n+delay))
@@ -77,14 +77,14 @@ class DataProcessor:
     def split_chronologically(self, raw: RawIQData, fractions: tuple[float, float] = (.6, .2)) -> tuple[RawIQData, ...]:
         a, b = fractions
         if a <= 0 or b <= 0 or a+b >= 1:
-            raise ValueError("Fracciones de división inválidas.")
+            raise ValueError("Invalid split fractions.")
         n = len(raw.x)
         i, j = int(n*a), int(n*(a+b))
         return (self.subset(raw, 0, i), self.subset(raw, i+self.guard, j),
                 self.subset(raw, j+self.guard, n))
 
     def apply_guard_intervals(self, raw: RawIQData) -> RawIQData:
-        # Conservador también para registros separados: nunca heredar estado.
+        # Be conservative for separate recordings too: never inherit state.
         return self.subset(raw, self.guard, len(raw.x)-self.guard)
 
     def prepare(self, training: RawIQData, validation: RawIQData, test: RawIQData,
@@ -94,36 +94,36 @@ class DataProcessor:
             self.validate(raw)
         periods = [float(np.median(np.diff(r.time))) for r in raws]
         if not np.allclose(periods, periods[0], rtol=1e-5, atol=1e-18):
-            raise ValueError("Frecuencias de muestreo incompatibles entre particiones.")
+            raise ValueError("Incompatible sampling rates across partitions.")
         for key in ("carrier_frequency_hz", "modulation"):
             values = [r.metadata.get("signal_config", {}).get(key) for r in raws]
             if any(v != values[0] for v in values[1:]):
-                raise ValueError(f"Metadatos incompatibles: {key}.")
+                raise ValueError(f"Incompatible metadata: {key}.")
         def identical(a: RawIQData, b: RawIQData) -> bool:
             return np.array_equal(a.x, b.x) and np.array_equal(a.y, b.y)
         if identical(training, validation) or identical(validation, test):
-            raise ValueError("Validation duplica otra partición; se necesitan datos independientes.")
+            raise ValueError("Validation duplicates another partition; independent data are required.")
         provenance = {"sources": [{"role": role, "path": r.source, "sha256": r.sha256, "metadata": r.metadata}
                                   for role, r in zip(("training", "validation", "test"), raws)], "sample_period_s": periods[0],
                       "guard_samples_each_edge": self.guard, "common_past": self.past,
                       "common_future": self.future, "alignment": "preserved_from_aligned_waveform",
                       "split_mode": "provided_partitions_in_original_sample_order",
-                      "warnings": ["Los tiempos de simulaciones separadas no establecen cronología global.",
-                                   "La independencia estadística de señales PN9 no se demuestra con hashes distintos."]}
+                      "warnings": ["Timestamps from separate simulations do not establish a global chronology.",
+                                   "Different hashes do not prove statistical independence of PN9 signals."]}
         if identical(training, test):
             if duplicate_policy != "split_training":
-                raise ValueError("training y test son idénticos. Proporcione test independiente o configure duplicate_policy=split_training.")
+                raise ValueError("Training and test are identical. Provide an independent test set or set duplicate_policy=split_training.")
             if not 0 < train_fraction < 1:
-                raise ValueError("train_fraction debe estar entre 0 y 1.")
+                raise ValueError("train_fraction must be between 0 and 1.")
             boundary = int(len(training.x) * train_fraction)
             test = self.subset(training, boundary + self.guard, len(training.x))
             training = self.subset(training, 0, boundary)
             provenance["split_mode"] = "duplicate_test_replaced_by_chronological_training_holdout"
             provenance["holdout_boundary"] = boundary
-            provenance["warnings"].append("Test es un holdout del registro training, no una nueva simulación.")
+            provenance["warnings"].append("Test is a holdout from the training recording, not a separate simulation.")
         guarded = [self.apply_guard_intervals(r) for r in (training, validation, test)]
         if any(len(r.x) <= self.past + self.future + 2 for r in guarded):
-            raise ValueError("Pocas muestras después de guardas y contexto.")
+            raise ValueError("Too few samples remain after guard intervals and context.")
         gain = self.estimate_gain(guarded[0].x, guarded[0].y)
         parts = [DataPartition(r.x, self.normalize_output(r.y, gain), r.time,
                                np.arange(self.past, len(r.x)-self.future)) for r in guarded]

@@ -11,20 +11,20 @@ def plots(original, dpd, fs, directory):
     import matplotlib.pyplot as plt
     t = np.arange(len(original))/fs*1e9
     fig,axes=plt.subplots(3,1,figsize=(11,8))
-    for ax,a,b,label in zip(axes,[original.real,original.imag,abs(original)],[dpd.real,dpd.imag,abs(dpd)],['I (V)','Q (V)','Magnitud (V)']):
+    for ax,a,b,label in zip(axes,[original.real,original.imag,abs(original)],[dpd.real,dpd.imag,abs(dpd)],['I (V)','Q (V)','Magnitude (V)']):
         ax.plot(t,a,label='Original',lw=.8); ax.plot(t,b,label='DPD',lw=.8,alpha=.7)
-        ax.set(xlabel='Tiempo (ns)',ylabel=label); ax.legend(); ax.grid(alpha=.2)
-    fig.tight_layout(); fig.savefig(str(directory/'tiempo.png'),dpi=150); plt.close(fig)
+        ax.set(xlabel='Time (ns)',ylabel=label); ax.legend(); ax.grid(alpha=.2)
+    fig.tight_layout(); fig.savefig(str(directory/'time.png'),dpi=150); plt.close(fig)
     fig,axes=plt.subplots(1,2,figsize=(12,5))
     window=np.hanning(len(original)); f=np.fft.fftshift(np.fft.fftfreq(len(original),1/fs))/1e9
     for v,label in [(original,'Original'),(dpd,'DPD')]:
         spec=abs(np.fft.fftshift(np.fft.fft(v*window)))/window.sum()
         axes[0].plot(f,20*np.log10(np.maximum(spec,1e-15)),label=label,lw=.8)
         axes[1].scatter(v.real,v.imag,label=label,s=3,alpha=.4)
-    axes[0].set(xlabel='Frecuencia banda base (GHz)',ylabel='FFT, dB respecto a 1 V (Hann)',title='Espectro de verificación; no PSD ni ACLR')
-    axes[1].set(xlabel='I (V)',ylabel='Q (V)',title='Constelación de muestras'); axes[1].set_aspect('equal',adjustable='box')
+    axes[0].set(xlabel='Baseband frequency (GHz)',ylabel='FFT, dB relative to 1 V (Hann)',title='Verification spectrum; not PSD or ACLR')
+    axes[1].set(xlabel='I (V)',ylabel='Q (V)',title='Sample constellation'); axes[1].set_aspect('equal',adjustable='box')
     for ax in axes: ax.legend(); ax.grid(alpha=.2)
-    fig.tight_layout(); fig.savefig(str(directory/'espectro_constelacion.png'),dpi=150); plt.close(fig)
+    fig.tight_layout(); fig.savefig(str(directory/'spectrum_constellation.png'),dpi=150); plt.close(fig)
 
 
 def main():

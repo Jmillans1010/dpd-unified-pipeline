@@ -1,3 +1,3 @@
-"""Procesamiento reproducible de pares I/Q de entrada y salida."""
+"""Reproducible processing of input/output I/Q pairs."""
 
 __version__ = "0.1.0"

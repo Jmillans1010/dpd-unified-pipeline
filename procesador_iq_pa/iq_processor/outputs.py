@@ -1,4 +1,4 @@
-"""Exportaciones sin cálculos ocultos y gráficas con backend no interactivo."""
+"""Explicit data exports and plots using a non-interactive backend."""
 from pathlib import Path
 import csv
 import json
@@ -60,8 +60,8 @@ class Grapher:
 
         fig, ax = plt.subplots(figsize=(9, 4), constrained_layout=True)
         ax.plot(a.lag_table[:, 0], a.lag_table[:, 1], color="#147d86")
-        ax.axvline(a.integer_delay, color="#ae5f16", linestyle="--", label=f"Retardo entero: {a.integer_delay}")
-        ax.set(xlabel="Retardo [muestras]", ylabel="Magnitud de correlación", title="Correlación cruzada compleja")
+        ax.axvline(a.integer_delay, color="#ae5f16", linestyle="--", label=f"Integer delay: {a.integer_delay}")
+        ax.set(xlabel="Delay [samples]", ylabel="Correlation magnitude", title="Complex cross-correlation")
         ax.legend()
         save(fig, "01_cross_correlation.png")
 
@@ -69,12 +69,12 @@ class Grapher:
         t = (a.time[:n]-a.time[0])*1e9
         fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True, constrained_layout=True)
         for ax, component, label in ((axes[0], np.real, "I"), (axes[1], np.imag, "Q")):
-            ax.plot(t, component(a.x[:n]), label="Entrada", color="#147d86")
-            ax.plot(t, component(a.y[:n]), label="Salida", color="#ae5f16", alpha=.8)
-            ax.set_ylabel(f"{label} [unidad CSV]")
+            ax.plot(t, component(a.x[:n]), label="Input", color="#147d86")
+            ax.plot(t, component(a.y[:n]), label="Output", color="#ae5f16", alpha=.8)
+            ax.set_ylabel(f"{label} [CSV units]")
             ax.legend(loc="upper right")
-        axes[0].set_title(f"Formas de onda alineadas: primeras {n} muestras, sin compensar ganancia")
-        axes[1].set_xlabel("Tiempo desde el inicio alineado [ns]")
+        axes[0].set_title(f"Aligned waveforms: first {n} samples, without gain compensation")
+        axes[1].set_xlabel("Time from aligned start [ns]")
         save(fig, "02_aligned_waveforms.png")
         if s is None:
             return paths
@@ -82,41 +82,41 @@ class Grapher:
         valid = [c for c in s.candidates if c["evm_percent"] is not None]
         ax.plot([c["phase"] for c in valid], [c["evm_percent"] for c in valid], "o-", color="#147d86")
         ax.scatter([s.phase], [s.evm.rms_percent], color="#ae5f16", s=65, zorder=3)
-        ax.set(xlabel="Fase respecto del inicio alineado [muestras]", ylabel="EVM RMS [%]",
-               title=f"Selección de fase: p={s.phase}, EVM={s.evm.rms_percent:.5f}% (mismo registro)")
+        ax.set(xlabel="Phase relative to aligned start [samples]", ylabel="RMS EVM [%]",
+               title=f"Phase selection: p={s.phase}, EVM={s.evm.rms_percent:.5f}% (same record)")
         ax.set_xticks([c["phase"] for c in s.candidates])
         save(fig, "03_evm_vs_phase.png")
         fig, axes = plt.subplots(1, 2, figsize=(11, 5), constrained_layout=True)
-        axes[0].scatter(s.x.real, s.x.imag, s=10, alpha=.55, color="#147d86", label="Entrada medida")
-        axes[0].set_title("Una muestra por símbolo: entrada")
+        axes[0].scatter(s.x.real, s.x.imag, s=10, alpha=.55, color="#147d86", label="Measured input")
+        axes[0].set_title("One sample per symbol: input")
         axes[0].legend()
-        axes[1].scatter(s.y.real, s.y.imag, s=10, alpha=.5, color="#ae5f16", label="Salida medida")
-        axes[1].scatter(s.evm.reference.real, s.evm.reference.imag, s=14, marker="+", color="#147d86", label="Referencia αX")
-        axes[1].set_title("Salida frente a referencia lineal ajustada")
+        axes[1].scatter(s.y.real, s.y.imag, s=10, alpha=.5, color="#ae5f16", label="Measured output")
+        axes[1].scatter(s.evm.reference.real, s.evm.reference.imag, s=14, marker="+", color="#147d86", label="Reference αX")
+        axes[1].set_title("Output versus fitted linear reference")
         axes[1].legend()
         for ax in axes:
-            ax.set(xlabel="I [unidad CSV]", ylabel="Q [unidad CSV]")
+            ax.set(xlabel="I [CSV units]", ylabel="Q [CSV units]")
             ax.set_aspect("equal", adjustable="box")
         save(fig, "04_constellations.png")
         fig, ax = plt.subplots(figsize=(10, 4), constrained_layout=True)
         ax.plot(np.abs(s.evm.error), color="#147d86", linewidth=.8)
-        ax.set(xlabel="Índice de símbolo", ylabel="|Y − αX| [unidad CSV]", title="Error por símbolo")
+        ax.set(xlabel="Symbol index", ylabel="|Y − αX| [CSV units]", title="Error per symbol")
         save(fig, "05_symbol_error.png")
         return paths
 
 
 def write_summary(result, path):
     a, s, m = result.alignment, result.selection, result.metadata
-    lines = ["PROCESADOR I/Q PARA PA", "",
-             f"Muestras alineadas: {len(a.x)}",
-             f"Retardo por índices: {a.integer_delay+a.fractional_delay:.9g} muestras",
-             f"Retardo temporal (incluye orígenes de tiempos): {a.delay_s:.9g} s",
-             f"Frecuencia de muestreo observada: {m['processing']['sampling_observed']['sample_rate_hz']:.9g} Hz"]
+    lines = ["PA I/Q PROCESSOR", "",
+             f"Aligned samples: {len(a.x)}",
+             f"Index delay: {a.integer_delay+a.fractional_delay:.9g} samples",
+             f"Time delay (including time origins): {a.delay_s:.9g} s",
+             f"Observed sample rate: {m['processing']['sampling_observed']['sample_rate_hz']:.9g} Hz"]
     if s:
-        lines += [f"Fase de símbolo seleccionada: {s.phase}", f"Símbolos: {len(s.x)}",
-                  f"EVM RMS ajustado sobre el mismo registro: {s.evm.rms_percent:.9g} %",
-                  f"EVM RMS [dB]: {s.evm.rms_db}", f"Alfa: {s.evm.alpha}"]
+        lines += [f"Selected symbol phase: {s.phase}", f"Symbols: {len(s.x)}",
+                  f"RMS EVM fitted on the same record: {s.evm.rms_percent:.9g} %",
+                  f"RMS EVM [dB]: {s.evm.rms_db}", f"Alpha: {s.evm.alpha}"]
     else:
-        lines.append("EVM omitido: "+m["processing"]["stage_status"]["symbols_evm"]["reason"])
-    lines += ["", "ADVERTENCIAS:"] + m["processing"]["warnings"]
+        lines.append("EVM skipped: "+m["processing"]["stage_status"]["symbols_evm"]["reason"])
+    lines += ["", "WARNINGS:"] + m["processing"]["warnings"]
     path.write_text("\n".join(lines)+"\n", encoding="utf-8")

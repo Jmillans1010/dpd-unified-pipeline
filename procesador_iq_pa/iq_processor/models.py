@@ -1,4 +1,4 @@
-"""Contratos de configuración y datos. Los vectores usan unidades SI."""
+"""Configuration and data contracts. Vectors use SI units."""
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 import json
@@ -7,7 +7,7 @@ import numpy as np
 
 
 class ProcessingError(ValueError):
-    """Error de datos/configuración que impide una etapa."""
+    """A data/configuration error that prevents a stage from running."""
 
 
 @dataclass
@@ -37,17 +37,17 @@ class ProcessingConfig:
     def read(cls, path: Path):
         raw = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(raw, dict):
-            raise ProcessingError("El archivo de configuración debe contener un objeto JSON.")
+            raise ProcessingError("The configuration file must contain a JSON object.")
         allowed = {f.name for f in fields(cls)}
         if set(raw) - allowed:
-            raise ProcessingError(f"Opciones desconocidas: {sorted(set(raw) - allowed)}")
+            raise ProcessingError(f"Unknown options: {sorted(set(raw) - allowed)}")
         result = cls(**raw)
         result.validate()
         return result
 
     def validate(self):
         if not isinstance(self.input_files, dict) or set(self.input_files) != {"I_in", "Q_in", "I_out", "Q_out"}:
-            raise ProcessingError("input_files debe definir I_in, Q_in, I_out y Q_out.")
+            raise ProcessingError("input_files must define I_in, Q_in, I_out, and Q_out.")
         for name in ("samples_per_symbol", "max_delay_samples", "interpolation_half_width",
                      "minimum_symbols", "symbol_phase"):
             value = getattr(self, name)
@@ -55,26 +55,26 @@ class ProcessingConfig:
                 continue
             minimum = 0 if name in ("symbol_phase", "max_delay_samples") else 1
             if type(value) is not int or value < minimum:
-                raise ProcessingError(f"{name} debe ser un entero >= {minimum}.")
+                raise ProcessingError(f"{name} must be an integer >= {minimum}.")
         if self.interpolation_half_width < 2:
-            raise ProcessingError("interpolation_half_width debe ser >= 2.")
+            raise ProcessingError("interpolation_half_width must be >= 2.")
         for name in ("additional_initial_crop_s", "time_atol_s", "time_rtol", "phase_tie_tolerance_pp"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-                raise ProcessingError(f"{name} debe ser finito y no negativo.")
+                raise ProcessingError(f"{name} must be finite and non-negative.")
         if (isinstance(self.minimum_overlap_fraction, bool)
                 or not isinstance(self.minimum_overlap_fraction, (int, float))
                 or not 0 < self.minimum_overlap_fraction <= 1):
-            raise ProcessingError("minimum_overlap_fraction debe estar en (0, 1].")
+            raise ProcessingError("minimum_overlap_fraction must be in (0, 1].")
         for name in ("remove_dc", "fractional_refinement", "plots", "samples_per_symbol_verified",
                      "source_data_rate_is_bit_rate"):
             if type(getattr(self, name)) is not bool:
-                raise ProcessingError(f"{name} debe ser booleano.")
+                raise ProcessingError(f"{name} must be a boolean.")
         if not isinstance(self.manual_metadata, dict):
-            raise ProcessingError("manual_metadata debe ser un objeto JSON.")
+            raise ProcessingError("manual_metadata must be a JSON object.")
         for value in [*self.input_files.values(), self.netlist, self.previous_metadata, self.output_directory]:
             if value is not None and (not isinstance(value, str) or not value or Path(value).is_absolute()):
-                raise ProcessingError("Las rutas configuradas deben ser cadenas relativas al archivo de configuración.")
+                raise ProcessingError("Configured paths must be strings relative to the configuration file.")
 
 
 @dataclass

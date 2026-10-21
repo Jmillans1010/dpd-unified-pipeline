@@ -21,7 +21,7 @@ class SearchPolicy(ABC):
 class MPSearchPolicy(SearchPolicy):
     def __init__(self, max_P: int = 7, max_M: int = 3):
         if max_P < 1 or max_P % 2 != 1 or max_M < 0:
-            raise ValueError("Límites P/M inválidos.")
+            raise ValueError("Invalid P/M limits.")
         self.max_P, self.max_M = max_P, max_M
 
     def minimal_config(self) -> ModelConfig:
@@ -50,7 +50,7 @@ class GMPSearchPolicy(SearchPolicy):
     def __init__(self, max_P: int = 7, max_M: int = 3, max_Q: int = 2):
         MPSearchPolicy(max_P, max_M)
         if max_Q < 1:
-            raise ValueError("max_Q debe ser positivo.")
+            raise ValueError("max_Q must be positive.")
         self.max_P, self.max_M, self.max_Q = max_P, max_M, max_Q
 
     def minimal_config(self) -> ModelConfig:
@@ -123,7 +123,7 @@ class LUTSearchPolicy(SearchPolicy):
 
     def __init__(self, min_bins: int = 8, max_bins: int = 1024):
         if min_bins < 2 or max_bins < min_bins or (max_bins/min_bins) % 1 or (int(max_bins/min_bins) & (int(max_bins/min_bins)-1)):
-            raise ValueError("Bins deben crecer por potencias de dos desde min_bins.")
+            raise ValueError("Bins must grow in powers of two from min_bins.")
         self.min_bins, self.max_bins = min_bins, max_bins
 
     def minimal_config(self) -> ModelConfig:

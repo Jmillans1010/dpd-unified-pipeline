@@ -59,5 +59,5 @@ class JSONWriter:
         result = cls.read(path)
         model = result.get("model", result)
         if model is None:
-            raise ValueError("El resultado no contiene un modelo válido.")
+            raise ValueError("The result does not contain a valid model.")
         return TrainedModel(**{**model, "diagnostics": FitDiagnostics(**model["diagnostics"])})

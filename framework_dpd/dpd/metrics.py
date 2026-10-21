@@ -4,19 +4,19 @@ from .contracts import Array
 
 def normalized_error(target: Array, prediction: Array) -> float:
     if target.shape != prediction.shape or target.size == 0:
-        raise ValueError("Target y predicción deben tener igual forma no vacía.")
+        raise ValueError("Target and prediction must have the same nonempty shape.")
     if not np.all(np.isfinite(target)) or not np.all(np.isfinite(prediction)):
-        raise ValueError("NMSE requiere valores finitos.")
+        raise ValueError("NMSE requires finite values.")
     energy = float(np.vdot(target, target).real)
     if energy <= np.finfo(float).tiny:
-        raise ValueError("Target sin energía.")
+        raise ValueError("The target has no energy.")
     residual = target - prediction
     return float(np.vdot(residual, residual).real / energy)
 
 
 def error_to_db(error: float) -> float:
     if error < 0 or not np.isfinite(error):
-        raise ValueError("Error lineal inválido.")
+        raise ValueError("Invalid linear error.")
     return float(10 * np.log10(error)) if error else -float("inf")
 
 
@@ -31,7 +31,7 @@ def nmse(target: Array, prediction: Array) -> float:
 def bic_penalty_db(sample_count: int) -> float:
     """Becerra et al. (2020), eqs. (9)/(13); complex samples/coefficients."""
     if not isinstance(sample_count, (int, np.integer)) or sample_count < 1:
-        raise ValueError("BIC requiere un número positivo de muestras complejas.")
+        raise ValueError("BIC requires a positive number of complex samples.")
     return float(10 * np.log10(2 * sample_count) / sample_count)
 
 
@@ -42,7 +42,7 @@ def bic_score_db(error: float, coefficients: int, sample_count: int) -> float:
     Count independent fitted complex coefficients, not hardware operations.
     """
     if error < 0 or not np.isfinite(error) or coefficients < 1:
-        raise ValueError("Error o número de coeficientes BIC inválido.")
+        raise ValueError("Invalid BIC error or coefficient count.")
     return error_to_db(max(error, np.finfo(float).tiny)) + coefficients * bic_penalty_db(sample_count)
 
 

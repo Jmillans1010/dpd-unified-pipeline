@@ -1,4 +1,4 @@
-"""Bases explícitas: el mismo catálogo alimenta entrenamiento y hardware."""
+"""Explicit bases: the same catalog supports training and hardware estimates."""
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
@@ -60,9 +60,9 @@ def gmp_terms(config: ModelConfig) -> list[BasisTerm]:
 
 
 def generate_volterra_terms(config: ModelConfig):
-    """Complejo banda base: (p+1)/2 factores z, (p-1)/2 conjugados.
+    """Complex baseband: (p+1)/2 z factors and (p-1)/2 conjugated factors.
 
-    Simetría dentro de cada grupo; no duplicar permutaciones conmutativas.
+    Apply symmetry within each group; do not duplicate commutative permutations.
     """
     delays = range(config["M"]+1)
     for p in range(1, config["P"]+1, 2):

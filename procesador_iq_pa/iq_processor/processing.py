@@ -1,4 +1,4 @@
-"""Algoritmos numéricos. Convención: y[n] = a*x[n-D] implica D positivo."""
+"""Numerical algorithms. Convention: y[n] = a*x[n-D] implies positive D."""
 from dataclasses import asdict
 from datetime import datetime, timezone
 import platform
@@ -13,25 +13,25 @@ class SignalValidator:
         measurements = {}
         for name, signal in (("input", data.input), ("output", data.output)):
             if len(signal.time) != len(signal.values) or len(signal.time) < 3:
-                raise ProcessingError(f"Longitud inválida en {name}.")
+                raise ProcessingError(f"Invalid length in {name}.")
             if not np.isfinite(signal.time).all() or not np.isfinite(signal.values).all():
-                raise ProcessingError(f"Valores no finitos en {name}.")
+                raise ProcessingError(f"Non-finite values in {name}.")
             differences = np.diff(signal.time)
             period = float(np.median(differences))
             error = float(np.max(np.abs(differences-period)))
             if np.any(differences <= 0) or error > config.time_atol_s + config.time_rtol*period:
-                raise ProcessingError(f"Tiempos de {name} duplicados, decrecientes o no uniformes. No se remuestrea automáticamente.")
+                raise ProcessingError(f"Duplicate, decreasing, or non-uniform times in {name}. Automatic resampling is disabled.")
             measurements[name] = {"sample_period_s": period, "maximum_step_error_s": error,
                                   "first_time_s": float(signal.time[0]), "last_time_s": float(signal.time[-1]),
                                   "count": len(signal.time)}
         period = measurements["input"]["sample_period_s"]
         if not np.isclose(period, measurements["output"]["sample_period_s"], rtol=config.time_rtol, atol=config.time_atol_s):
-            raise ProcessingError("Entrada y salida tienen frecuencias de muestreo incompatibles.")
-        # La tolerancia acumulada también debe ser pequeña: no admitir deriva de reloj.
+            raise ProcessingError("Input and output have incompatible sample rates.")
+        # Keep the accumulated tolerance small as well: reject clock drift.
         n = min(len(data.input.time), len(data.output.time))
         drift = (data.output.time[:n]-data.output.time[0]) - (data.input.time[:n]-data.input.time[0])
         if np.max(np.abs(drift)) > config.time_atol_s + config.time_rtol*period:
-            raise ProcessingError("Las rejillas temporales acumulan deriva; se requiere remuestreo explícito.")
+            raise ProcessingError("The time grids accumulate drift; explicit resampling is required.")
         return {"sample_period_s": period, "sample_rate_hz": 1/period, "channels": measurements,
                 "accepted_step_tolerance_s": config.time_atol_s + config.time_rtol*period,
                 "maximum_interchannel_grid_drift_s": float(np.max(np.abs(drift)))}
@@ -44,7 +44,7 @@ class SignalPreprocessor:
             cutoff = signal.time[0] + config.additional_initial_crop_s
             keep = signal.time >= cutoff - config.time_atol_s
             if np.count_nonzero(keep) < 3:
-                raise ProcessingError("El recorte inicial deja menos de tres muestras.")
+                raise ProcessingError("The initial crop leaves fewer than three samples.")
             values = signal.values[keep].copy()
             mean = complex(np.mean(values)) if config.remove_dc else 0j
             values -= mean
@@ -56,7 +56,7 @@ class SignalPreprocessor:
 
 
 def complex_correlation(x, y):
-    """Correlación LINEAL por FFT: R[l] = sum conj(x[n])*y[n+l]."""
+    """LINEAR correlation using the FFT: R[l] = sum conj(x[n])*y[n+l]."""
     total = len(x) + len(y) - 1
     size = 1 << (total - 1).bit_length()
     result = np.fft.ifft(np.fft.fft(y, size) * np.fft.fft(np.conjugate(x[::-1]), size))[:total]
@@ -64,11 +64,11 @@ def complex_correlation(x, y):
 
 
 def sinc_interpolate(values, positions, half_width):
-    """Sinc con ventana Hann y normalización DC; exige soporte completo."""
+    """Hann-windowed sinc with DC normalization; requires full support."""
     base = np.floor(positions).astype(int)
     indices = base[:, None] + np.arange(-half_width+1, half_width+1)
     if indices.min() < 0 or indices.max() >= len(values):
-        raise ProcessingError("Interpolación solicitada sin soporte de borde completo.")
+        raise ProcessingError("Interpolation requested without full boundary support.")
     distance = positions[:, None] - indices
     weights = np.sinc(distance) * np.where(np.abs(distance) < half_width,
                                          0.5*(1+np.cos(np.pi*distance/half_width)), 0)
@@ -80,14 +80,14 @@ class FractionalDelayRefiner:
     def refine(self, lags, correlation, delay, allowed_limit):
         index = int(np.searchsorted(lags, delay))
         if abs(delay) >= allowed_limit or index == 0 or index == len(lags)-1:
-            return 0., "Refinamiento omitido: pico en el límite de búsqueda."
+            return 0., "Refinement skipped: peak at the search limit."
         a, b, c = np.abs(correlation[index-1:index+2])
         denominator = 2*(a-2*b+c)
         if abs(denominator) <= np.finfo(float).eps*max(b, np.finfo(float).tiny):
-            return 0., "Refinamiento omitido: pico demasiado plano."
+            return 0., "Refinement skipped: the peak is too flat."
         fraction = float((a-c)/denominator)
         if not np.isfinite(fraction) or abs(fraction) > 0.5:
-            return 0., "Refinamiento omitido: ajuste parabólico fuera de ±0.5 muestras."
+            return 0., "Refinement skipped: parabolic fit outside ±0.5 samples."
         return fraction, None
 
 
@@ -95,19 +95,19 @@ class SampleAligner:
     def align(self, data, sampling, config):
         x, y = data.input.values, data.output.values
         if np.vdot(x, x).real <= np.finfo(float).tiny or np.vdot(y, y).real <= np.finfo(float).tiny:
-            raise ProcessingError("No se puede correlacionar una señal de energía nula.")
+            raise ProcessingError("Cannot correlate a zero-energy signal.")
         lags, correlation = complex_correlation(x, y)
         overlap = np.minimum(len(x), len(y)-lags) - np.maximum(0, -lags)
         minimum = max(3, int(np.ceil(config.minimum_overlap_fraction*min(len(x), len(y)))))
         allowed = (np.abs(lags) <= config.max_delay_samples) & (overlap >= minimum)
         if not np.any(allowed):
-            raise ProcessingError("No hay retardos con suficiente solapamiento.")
+            raise ProcessingError("No delays have sufficient overlap.")
         candidates = np.flatnonzero(allowed)
         peak = int(candidates[np.argmax(np.abs(correlation[candidates]))])
         delay = int(lags[peak])
         warnings = []
         if len(candidates) > 1 and peak in (candidates[0], candidates[-1]):
-            warnings.append("Pico de correlación en un límite: revise max_delay_samples y el solapamiento.")
+            warnings.append("Correlation peak at a boundary: check max_delay_samples and overlap.")
         table = []
         for idx in candidates:
             lag = int(lags[idx])
@@ -119,7 +119,7 @@ class SampleAligner:
                  and abs(correlation[i]) >= abs(correlation[i-1]) and abs(correlation[i]) >= abs(correlation[i+1])]
         alternatives = sorted(peaks, key=lambda i: abs(correlation[i]), reverse=True)[:5]
         if len(alternatives) > 1 and abs(correlation[alternatives[1]]) >= 0.98*abs(correlation[peak]):
-            warnings.append("Hay picos de correlación similares; el retardo podría ser ambiguo.")
+            warnings.append("Similar correlation peaks exist; the delay may be ambiguous.")
         fraction = 0.
         if config.fractional_refinement:
             fraction, warning = FractionalDelayRefiner().refine(lags, correlation, delay, config.max_delay_samples)
@@ -137,7 +137,7 @@ class SampleAligner:
             valid = (positions >= 0) & (positions < len(y))
         n, positions = n[valid], positions[valid]
         if len(n) < minimum:
-            raise ProcessingError("El refinamiento/recorte deja menos del solapamiento mínimo configurado.")
+            raise ProcessingError("Refinement/cropping leaves less than the configured minimum overlap.")
         aligned_y = sinc_interpolate(y, positions, config.interpolation_half_width) if fraction else y[positions.astype(int)]
         period = sampling["sample_period_s"]
         output_times = np.interp(positions, np.arange(len(y)), data.output.time) if fraction else data.output.time[positions.astype(int)]
@@ -167,16 +167,16 @@ class EVMCalculator:
     def calculate(self, x, y):
         x, y = np.asarray(x), np.asarray(y)
         if x.ndim != 1 or y.shape != x.shape or len(x) == 0 or not np.isfinite(x).all() or not np.isfinite(y).all():
-            raise ProcessingError("EVM necesita dos vectores finitos de igual longitud, no vacíos.")
+            raise ProcessingError("EVM requires two non-empty, finite vectors of equal length.")
         energy = float(np.vdot(x, x).real)
         if energy <= np.finfo(float).tiny:
-            raise ProcessingError("EVM indefinido: entrada de energía nula.")
+            raise ProcessingError("EVM is undefined: zero-energy input.")
         alpha = complex(np.vdot(x, y)/energy)
         reference = alpha*x
         reference_energy = float(np.vdot(reference, reference).real)
         output_energy = float(np.vdot(y, y).real)
         if reference_energy <= max(np.finfo(float).tiny, np.finfo(float).eps*output_energy):
-            raise ProcessingError("EVM indefinido: referencia lineal de energía nula o numéricamente despreciable.")
+            raise ProcessingError("EVM is undefined: the linear reference has zero or numerically negligible energy.")
         error = y-reference
         ratio = float(np.sqrt(np.vdot(error, error).real/reference_energy))
         return EVMResult(alpha, reference, error, 100*ratio, 20*float(np.log10(ratio)) if ratio > 0 else None)
@@ -186,9 +186,9 @@ class SymbolTimingSelector:
     def select(self, alignment, sps, config):
         count = len(alignment.x)//sps
         if count < config.minimum_symbols:
-            raise ProcessingError(f"Solo hay {count} símbolos completos; se requieren {config.minimum_symbols}.")
+            raise ProcessingError(f"Only {count} complete symbols are available; {config.minimum_symbols} are required.")
         if config.symbol_phase is not None and config.symbol_phase >= sps:
-            raise ProcessingError("symbol_phase debe estar entre 0 y L-1.")
+            raise ProcessingError("symbol_phase must be between 0 and L-1.")
         candidates, evaluated = [], {}
         for phase in range(sps):
             indices = phase + np.arange(count)*sps
@@ -200,11 +200,11 @@ class SymbolTimingSelector:
             except ProcessingError as exc:
                 candidates.append({"phase": phase, "symbol_count": count, "evm_percent": None, "status": str(exc)})
         if not evaluated:
-            raise ProcessingError("Ninguna fase tiene una referencia válida para EVM.")
+            raise ProcessingError("No phase has a valid EVM reference.")
         if config.symbol_phase is not None:
             phase = config.symbol_phase
             if phase not in evaluated:
-                raise ProcessingError("La fase manual no tiene un EVM válido.")
+                raise ProcessingError("The manually selected phase has no valid EVM.")
         else:
             minimum = min(r.rms_percent for _, r in evaluated.values())
             phase = min(p for p, (_, r) in evaluated.items() if r.rms_percent <= minimum+config.phase_tie_tolerance_pp)
@@ -245,7 +245,7 @@ class MetadataProcessor:
     def build(self, raw, metadata, config, sampling, preprocessing, alignment, selection, stats, stages):
         warnings = metadata.warnings + alignment.diagnostics["warnings"]
         if selection and config.symbol_phase is None:
-            warnings.append("La fase y alfa se ajustan y evalúan sobre los mismos símbolos; EVM de ajuste, no validación independiente.")
+            warnings.append("Phase and alpha are fitted and evaluated on the same symbols; this is fitted EVM, not independent validation.")
         return {"simulation_config": metadata.simulation_config,
                 "signal_config": metadata.signal_config,
                 "processing": {"schema_version": "0.1", "processor_version": __version__,
@@ -275,7 +275,7 @@ class DataProcessor:
         stages = {"validation": {"status": "completed"}, "alignment": {"status": "completed"}}
         selection = None
         if sps is None:
-            stages["symbols_evm"] = {"status": "skipped", "reason": "Faltan muestras por símbolo o una tasa de símbolos verificable."}
+            stages["symbols_evm"] = {"status": "skipped", "reason": "Samples per symbol or a verifiable symbol rate are missing."}
         else:
             try:
                 selection = SymbolTimingSelector().select(alignment, sps, config)

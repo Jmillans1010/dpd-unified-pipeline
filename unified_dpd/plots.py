@@ -12,7 +12,7 @@ def pyplot():
 def diagnostics(raw, fs, directory):
     plt = pyplot()
     fig, axes = plt.subplots(2, 2, figsize=(12, 7), constrained_layout=True)
-    for signal, label in ((raw.input, "Entrada"), (raw.output, "Salida")):
+    for signal, label in ((raw.input, "Input"), (raw.output, "Output")):
         n = min(len(signal.values), 512)
         t = (signal.time[:n]-signal.time[0])*1e9
         axes[0, 0].plot(t, signal.values[:n].real, label=label)
@@ -22,13 +22,13 @@ def diagnostics(raw, fs, directory):
         axes[1, 0].plot(np.fft.fftshift(np.fft.fftfreq(len(v), 1/fs))/1e6,
                         20*np.log10(np.maximum(amplitude, 1e-15)), label=label)
         axes[1, 1].hist(np.abs(v), bins=50, histtype="step", label=label)
-    axes[0, 0].set(xlabel="Tiempo relativo (ns)", ylabel="I (V)")
-    axes[0, 1].set(xlabel="Tiempo relativo (ns)", ylabel="Q (V)")
-    axes[1, 0].set(xlabel="Frecuencia baseband (MHz)", ylabel="Amplitud FFT (dB re 1 V)")
-    axes[1, 1].set(xlabel="Envolvente (V)", ylabel="Muestras")
+    axes[0, 0].set(xlabel="Relative time (ns)", ylabel="I (V)")
+    axes[0, 1].set(xlabel="Relative time (ns)", ylabel="Q (V)")
+    axes[1, 0].set(xlabel="Baseband frequency (MHz)", ylabel="FFT amplitude (dB re 1 V)")
+    axes[1, 1].set(xlabel="Envelope (V)", ylabel="Samples")
     for ax in axes.flat:
         ax.legend(); ax.grid(alpha=.2)
-    fig.suptitle("Diagnóstico previo a alineación / DPD")
+    fig.suptitle("Diagnostics before alignment / DPD")
     fig.savefig(directory/"00_raw_diagnostics.png", dpi=150)
     plt.close(fig)
 
@@ -41,20 +41,20 @@ def constellations(reference, predictions, rows, directory):
     zoom_limit = 1.12*max(float(abs(reference.real).max()), float(abs(reference.imag).max()), 1e-9)
     for suffix, limit in (("global", global_limit), ("zoom", zoom_limit)):
         fig, axes = plt.subplots(2, 3, figsize=(13, 8), constrained_layout=True)
-        axes[0, 0].scatter(reference.real, reference.imag, s=9, alpha=.6, label="Entrada real")
-        axes[0, 0].set_title(f"Referencia · {len(reference)} símbolos")
+        axes[0, 0].scatter(reference.real, reference.imag, s=9, alpha=.6, label="Measured input")
+        axes[0, 0].set_title(f"Reference · {len(reference)} symbols")
         for ax, (name, predicted) in zip(list(axes.flat)[1:], predictions.items()):
             row = next(r for r in rows if r["model"] == name)
             outside = int(np.sum((abs(predicted.real)>limit) | (abs(predicted.imag)>limit)))
-            ax.scatter(reference.real, reference.imag, s=10, alpha=.5, label="Entrada real")
-            ax.scatter(predicted.real, predicted.imag, s=9, alpha=.6, label="Reconstruida")
-            ax.set_title(f"{name} · NMSE símbolos {row['nmse_symbols_db']:.2f} dB\n{outside} fuera de vista")
+            ax.scatter(reference.real, reference.imag, s=10, alpha=.5, label="Measured input")
+            ax.scatter(predicted.real, predicted.imag, s=9, alpha=.6, label="Reconstructed")
+            ax.set_title(f"{name} · Symbol NMSE {row['nmse_symbols_db']:.2f} dB\n{outside} outside view")
         for ax in axes.flat:
             if not ax.has_data():
                 ax.axis("off"); continue
             ax.set(xlabel="I (V)", ylabel="Q (V)", xlim=(-limit, limit), ylim=(-limit, limit))
             ax.set_aspect("equal"); ax.grid(alpha=.2); ax.legend(fontsize=8)
-        fig.suptitle("Validación: solo instantes de símbolo · mismos índices para todos los modelos")
+        fig.suptitle("Validation: symbol instants only · same indices for all models")
         fig.savefig(directory/f"constellations_symbols_{suffix}.png", dpi=160)
         plt.close(fig)
 
@@ -66,8 +66,8 @@ def errors(indices, reference, predictions, directory):
         e = np.abs(prediction-reference)
         axes[0].plot(indices, e, label=name, alpha=.75)
         axes[1].plot(np.arange(len(e))/max(len(e)-1, 1), np.sort(e), label=name)
-    axes[0].set(xlabel="Índice de muestra alineada", ylabel="Error absoluto (V)")
-    axes[1].set(xlabel="Fracción acumulada", ylabel="Error absoluto ordenado (V)")
+    axes[0].set(xlabel="Aligned sample index", ylabel="Absolute error (V)")
+    axes[1].set(xlabel="Cumulative fraction", ylabel="Sorted absolute error (V)")
     for ax in axes:
         ax.grid(alpha=.2); ax.legend()
     fig.savefig(directory/"reconstruction_errors.png", dpi=150)

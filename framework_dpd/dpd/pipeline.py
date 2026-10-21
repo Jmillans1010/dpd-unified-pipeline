@@ -27,7 +27,7 @@ class TrainingPipeline:
         self.base = self.config_path.parent
         self.policies = {name: POLICIES[name](**limits) for name, limits in self.config["models"].items()}
         if not self.policies:
-            raise ValueError("Seleccione al menos una arquitectura.")
+            raise ValueError("Select at least one architecture.")
         hardware = dict(self.config.get("hardware", {}))
         self.estimator = ESTIMATORS[hardware.pop("mode", "direct")](**hardware)
         self.criteria = OptimizationCriteria(**self.config.get("optimization", {}))
@@ -42,7 +42,7 @@ class TrainingPipeline:
                 for config in policy.reference_configs():
                     terms = trainer.terms(config)
                     if len(terms) > self.config.get("max_basis_terms", 2048):
-                        raise ValueError(f"{name}: referencia excede max_basis_terms.")
+                        raise ValueError(f"{name}: reference model exceeds max_basis_terms.")
                     delays = [d for term in terms for d in term.delays()]
                     past, future = max(past, max(delays)), max(future, -min(delays))
         processor = DataProcessor(past, future, self.config.get("guard_samples"))
@@ -54,7 +54,7 @@ class TrainingPipeline:
         if mode == "validation_holdout":
             fraction = self.config.get("validation_fraction", .5)
             if not 0 < fraction < 1:
-                raise ValueError("validation_fraction debe estar entre 0 y 1.")
+                raise ValueError("validation_fraction must be between 0 and 1.")
             boundary = int(len(validation.x)*fraction)
             original_count = len(validation.x)
             test = processor.subset(validation, boundary+processor.guard, original_count)
@@ -67,7 +67,7 @@ class TrainingPipeline:
             test = reader.read(self.base / inputs["test"])
             data = processor.prepare(training, validation, test, self.config.get("duplicate_policy", "error"))
         else:
-            raise ValueError("split_mode desconocido.")
+            raise ValueError("Unknown split_mode.")
         self.data = data
         return data
 
@@ -92,13 +92,13 @@ class TrainingPipeline:
         results = []
         try:
             for name in self.policies:
-                print(f"Entrenando {name}...", flush=True)
+                print(f"Training {name}...", flush=True)
                 result = self.run_model(name)
                 writer.write(result, directory / f"{name}.json")
                 results.append(result)
                 detail = (f"BIC={result.optimization_trace.selected_bic_score_db}, "
-                          f"umbral/coef={result.optimization_trace.bic_penalty_db_per_coefficient} dB"
-                          if result.optimization_trace.stopping_rule == "bic" else f"progreso={result.progress_fraction}")
+                          f"threshold/coefficient={result.optimization_trace.bic_penalty_db_per_coefficient} dB"
+                          if result.optimization_trace.stopping_rule == "bic" else f"progress={result.progress_fraction}")
                 print(f"  {result.optimization_trace.stop_reason}: validation={result.nmse_validation_db}, test={result.nmse_test_db}, {detail}", flush=True)
             summary = [{"model": r.model_name, "config": r.best_config, "nmse_train_db": r.nmse_train_db,
                         "nmse_validation_db": r.nmse_validation_db, "nmse_test_db": r.nmse_test_db,
@@ -111,17 +111,17 @@ class TrainingPipeline:
                         "stop_reason": r.optimization_trace.stop_reason,
                         "evaluated_candidates": len(r.optimization_trace.candidates)} for r in results]
             writer.write(summary, directory / "summary.json")
-            lines = ["# Identificación inversa DPD", "", "Test: segunda mitad de Validation, excluida de selección de hiperparámetros." if self.config.get("split_mode", "validation_holdout") == "validation_holdout" else "Test: partición proporcionada.", "",
-                     "| Modelo | NMSE train dB | NMSE val dB | NMSE test dB | BIC dB / progreso histórico | Complejidad | Parada |",
+            lines = ["# DPD inverse identification", "", "Test: second half of validation, excluded from hyperparameter selection." if self.config.get("split_mode", "validation_holdout") == "validation_holdout" else "Test: supplied partition.", "",
+                     "| Model | Train NMSE dB | Validation NMSE dB | Test NMSE dB | BIC dB / legacy progress | Complexity | Stop reason |",
                      "|---|---:|---:|---:|---:|---:|---|"]
             def fmt(value):
-                return f"{value:.6g}" if value is not None else "N/D"
+                return f"{value:.6g}" if value is not None else "N/A"
             for r in results:
                 criterion = fmt(r.optimization_trace.selected_bic_score_db) if r.optimization_trace.stopping_rule == "bic" else f"{r.progress_fraction:.2%}"
                 lines.append(f"| {r.model_name} | {fmt(r.nmse_train_db)} | {fmt(r.nmse_validation_db)} | {fmt(r.nmse_test_db)} | {criterion} | {fmt(r.structural_complexity)} | {r.optimization_trace.stop_reason} |")
-            lines += ["", "Son errores de identificación del inverso, no EVM/ACLR del PA linealizado.",
-                      "BIC usa error de entrenamiento y penaliza coeficientes complejos según Becerra et al. (2020). Menor es mejor.",
-                      "Una parada local por BIC no garantiza un óptimo global. Los límites e inestabilidad se informan por separado.", "",
+            lines += ["", "These are inverse-identification errors, not EVM/ACLR of the linearized PA.",
+                      "BIC uses training error and penalizes complex coefficients following Becerra et al. (2020). Lower is better.",
+                      "A local BIC stopping decision does not guarantee a global optimum. Search limits and instability are reported separately.", "",
                       *[f"- {w}" for w in data.provenance["warnings"]]]
             (directory / "summary.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
             manifest["status"] = "completed" if all(r.model is not None for r in results) else "completed_with_unavailable_models"

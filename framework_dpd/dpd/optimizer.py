@@ -1,4 +1,4 @@
-"""Búsqueda común: no contiene nombres ni ecuaciones de arquitecturas."""
+"""Shared search logic without architecture names or equations."""
 from __future__ import annotations
 import json
 import numpy as np
@@ -57,7 +57,7 @@ class HyperparameterOptimizer:
     def calculate_marginal_efficiency(self, current: CandidateResult, candidate: CandidateResult) -> float | None:
         delta = candidate.structural_complexity-current.structural_complexity
         if delta < 0:
-            raise ValueError("La política redujo complejidad durante crecimiento.")
+            raise ValueError("The search policy reduced complexity during expansion.")
         return (candidate.progress_fraction-current.progress_fraction)/delta if delta else None
 
     @staticmethod
@@ -114,7 +114,7 @@ class HyperparameterOptimizer:
         valid_references = [c for c in references if c.valid]
         if not valid_references:
             trace.stop_reason = "numerical_instability"
-            trace.notes.append("No hay referencias numéricamente válidas; se conserva baseline.")
+            trace.notes.append("No numerically valid reference models; the baseline is retained.")
             self.reference_error = self.baseline_error
         else:
             self.reference_error = min(c.normalized_error_linear for c in valid_references)
@@ -124,7 +124,7 @@ class HyperparameterOptimizer:
             c.progress_fraction = self.calculate_progress(c)
         if not trace.stop_reason and self.baseline_error-self.reference_error <= np.finfo(float).eps*max(self.baseline_error, np.finfo(float).tiny):
             trace.stop_reason = "performance_plateau"
-            trace.notes.append("La referencia no mejora baseline; fracción de mejora indefinida, se informa 0.")
+            trace.notes.append("The reference does not improve on the baseline; improvement fraction is undefined and reported as 0.")
         visited = {baseline.candidate_id}
         stale = 0
         for iteration in range(self.criteria.max_iterations):

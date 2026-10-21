@@ -10,7 +10,7 @@ class Trainer(ABC):
 
     def __init__(self, condition_limit: float = 1e10, rcond: float = 1e-12):
         if not np.isfinite(condition_limit) or condition_limit < 1 or not 0 < rcond < 1:
-            raise ValueError("Límites numéricos inválidos.")
+            raise ValueError("Invalid numerical limits.")
         self.condition_limit, self.rcond = condition_limit, rcond
 
     @abstractmethod
@@ -41,7 +41,7 @@ class PolynomialTrainer(Trainer):
         delays = [d for t in terms for d in t.delays()]
         indices, z = data.indices, data.z
         if not len(indices) or indices[0]-max(delays) < 0 or indices[-1]-min(delays) >= len(z):
-            raise ValueError("Contexto de memoria insuficiente; no se permite wrap-around.")
+            raise ValueError("Insufficient memory context; wrap-around is not allowed.")
         columns = []
         for t in terms:
             if t.kind == "envelope":
@@ -60,8 +60,8 @@ class PolynomialTrainer(Trainer):
     def fit(self, train_data: DataPartition, config: ModelConfig) -> TrainedModel:
         phi = self.build_regressors(train_data, config)
         if not np.all(np.isfinite(phi)):
-            raise FloatingPointError("Regresores no finitos.")
-        # Equilibrado de columnas y SVD; nunca se forman ecuaciones normales.
+            raise FloatingPointError("Nonfinite regressors.")
+        # Column equilibration and SVD; never form the normal equations.
         scales = np.linalg.norm(phi, axis=0)
         safe_scales = np.where(scales > 0, scales, 1)
         coefficients, _, rank, scaled_s = np.linalg.lstsq(phi / safe_scales, train_data.target, rcond=self.rcond)
@@ -127,7 +127,7 @@ class LUTTrainer(Trainer):
             # Repeated amplitudes: blend by a tiny uniform amount to keep nodes strict.
             edges = (1-1e-10)*edges + 1e-10*np.linspace(0, maximum, bins+1)
         else:
-            raise ValueError("Binning LUT desconocido.")
+            raise ValueError("Unknown LUT binning method.")
         return edges, (edges[:-1] + edges[1:]) / 2
 
     @staticmethod
@@ -136,7 +136,7 @@ class LUTTrainer(Trainer):
             idx = np.searchsorted((nodes[:-1]+nodes[1:])/2, amplitudes)
             return idx, idx, np.zeros_like(amplitudes)
         if interpolation != "linear":
-            raise ValueError("Interpolación LUT desconocida.")
+            raise ValueError("Unknown LUT interpolation method.")
         right = np.clip(np.searchsorted(nodes, amplitudes, side="right"), 1, len(nodes)-1)
         left = right-1
         weight = np.clip((amplitudes-nodes[left])/(nodes[right]-nodes[left]), 0, 1)

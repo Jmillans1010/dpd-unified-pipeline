@@ -1,4 +1,4 @@
-"""Pruebas numéricas y de integración; unittest no requiere pytest."""
+"""Numerical and integration tests using unittest, without pytest."""
 from pathlib import Path
 import sys
 import json

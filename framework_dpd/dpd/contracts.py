@@ -118,15 +118,15 @@ class OptimizationCriteria:
 
     def __post_init__(self) -> None:
         if self.stopping_rule not in ("bic", "reference_fraction"):
-            raise ValueError("stopping_rule debe ser bic o reference_fraction.")
+            raise ValueError("stopping_rule must be bic or reference_fraction.")
         if not 0 < self.target_fraction <= 1:
-            raise ValueError("target_fraction debe estar en (0, 1].")
+            raise ValueError("target_fraction must be in (0, 1].")
         if self.min_improvement < 0 or self.tie_tolerance < 0:
-            raise ValueError("Las tolerancias deben ser no negativas.")
+            raise ValueError("Tolerances must be nonnegative.")
         if self.max_iterations < 1 or self.plateau_patience < 1:
-            raise ValueError("Iteraciones y paciencia deben ser positivas.")
+            raise ValueError("Iteration and patience limits must be positive.")
         if self.complexity_mode != "structural":
-            raise ValueError("Solo se admite structural; hardware se conserva separado.")
+            raise ValueError("Only structural complexity is supported; hardware estimates are kept separate.")
 
 
 @dataclass

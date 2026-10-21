@@ -1,140 +1,138 @@
-# Procesador I/Q para PA
+# PA I/Q processor
 
-Proyecto independiente que lee cuatro CSV Cadence y un netlist Spectre, alinea entrada/salida por correlación cruzada compleja y calcula EVM respecto de la entrada medida con ganancia y fase constantes ajustadas. Conserva las muestras completas para posterior modelado MP/GMP/Volterra.
+This reusable processor reads four Cadence CSV files and a Spectre netlist, aligns input/output using complex cross-correlation, and calculates EVM relative to the measured input with fitted constant gain and phase. Full waveform samples remain available for MP, GMP, and Volterra modeling.
 
-## Estructura
+The unified pipeline calls this package automatically. Its root configuration and run layout take precedence over the standalone examples below. Original measurement files are never modified, and private datasets are not included in the public repository.
+
+## Structure
 
 ```text
 procesador_iq_pa/
-├── run.py                       # Punto de entrada
-├── ejecutar.ps1                 # Lanzador para Windows
-├── config.json                  # Rutas relativas y parámetros
+├── run.py                       # Standalone entry point
+├── ejecutar.ps1                 # Windows launcher (legacy filename)
+├── config.json                  # Relative paths and parameters
 ├── requirements.txt
 ├── iq_processor/
-│   ├── models.py                # Configuración, contratos y resultados
-│   ├── readers.py               # CSV, netlist y resolución de metadatos
-│   ├── processing.py            # Validación, correlación, selección y EVM
-│   └── outputs.py               # CSV, JSON y gráficas
-├── tests/test_processor.py      # Pruebas sintéticas y con los CSV adjuntos
-└── data/
-    ├── input/                  # Copias de los cinco archivos proporcionados
-    └── output/                 # Una carpeta nueva por ejecución
+│   ├── models.py                # Configuration, contracts, and results
+│   ├── readers.py               # CSV, netlist, and metadata resolution
+│   ├── processing.py            # Validation, correlation, selection, and EVM
+│   └── outputs.py               # CSV, JSON, and plots
+├── tests/test_processor.py      # Synthetic tests and an optional real-data test
+└── data/                        # Local only; not included in the repository
+    ├── input/                   # The five original input files
+    └── output/                  # One directory per standalone run
 ```
 
-Los originales de la unidad de red no se modifican. Los archivos incluidos son `I_in_training.csv`, `Q_in_training.csv`, `I_out_training.csv`, `Q_out_training.csv` e `input`. El netlist no necesita extensión `.scs`.
+The standalone configuration expects `I_in_training.csv`, `Q_in_training.csv`, `I_out_training.csv`, `Q_out_training.csv`, and the extensionless `input` netlist. The netlist does not need an `.scs` extension.
 
-## Ejecutar
+## Standalone execution
 
-En Windows, desde esta carpeta:
-
-```powershell
-.\ejecutar.ps1
-```
-
-El lanzador utiliza exclusivamente `.venv/Scripts/python.exe`. El entorno de este equipo se ha creado con Python 3.14 y dependencias compiladas para esa versión. No guarda una ruta absoluta de usuario en el código. La carpeta histórica `.runtime_deps/` no se utiliza: contiene extensiones de Python 3.12 que no son compatibles con Python 3.14.
-
-En VS Code, abre `procesador_iq_pa.code-workspace`. Selecciona **Python: Select Interpreter** y elige `.venv/Scripts/python.exe` si VS Code conserva el intérprete anterior. El perfil **Procesador I/Q (.venv)** de Ejecutar y depurar especifica explícitamente ese entorno. La selección de intérprete en VS Code requiere la extensión Python habitual.
-
-El mensaje `_multiarray_umath.cp312-win_amd64.pyd` ejecutando Python 3.14 indica una mezcla de versiones binarias, no un error del algoritmo. No añadas `.runtime_deps` a `PYTHONPATH`. Si cambias de versión de Python, crea un entorno nuevo e instala allí `requirements.txt`; no copies paquetes compilados de otro intérprete. Los entornos virtuales se recrean al trasladar el proyecto a otro equipo.
-
-Para una instalación convencional y portátil (Python 3.10 o posterior):
+For a portable installation with Python 3.10 or later, run these commands from this directory:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe run.py
+.\ejecutar.ps1
+.\ejecutar.ps1 -NoPlots
 ```
 
-Con dependencias ya instaladas también funciona `python run.py`. En macOS/Linux, el intérprete del entorno virtual está en `.venv/bin/python`.
+The launcher uses `.venv/Scripts/python.exe` exclusively. The former `-SinGraficas` switch remains an alias for compatibility. On macOS/Linux, the virtual-environment interpreter is `.venv/bin/python`.
+
+With the dependencies installed in the selected interpreter, these commands also work:
 
 ```text
+python run.py
 python run.py --no-plots
-python run.py --config otra_configuracion.json
+python run.py --config another_config.json
 ```
 
-`run.py` puede invocarse desde otra carpeta: la configuración predeterminada se busca junto al script, y las rutas de los datos se resuelven **desde la carpeta del archivo de configuración**, no desde el directorio actual de la terminal. No se necesita conexión a la unidad de red para procesar las copias.
+`run.py` can be invoked from any directory. The default configuration is located beside the script; data paths are resolved **relative to the configuration file**, not the terminal's current directory. Local copies do not require a network connection.
 
-## Flujo y métodos
+Select the intended interpreter in your editor. Binary extensions must match its Python version. An error referring to `_multiarray_umath.cp312-win_amd64.pyd` under Python 3.14 indicates mixed binary versions, rather than a numerical algorithm error. Do not add a historical `.runtime_deps` directory to `PYTHONPATH`. Recreate virtual environments when moving the project or changing Python versions; do not copy compiled packages between interpreters.
 
-1. **CSVReader** lee tiempo en segundos y valor, con cabecera y separador coma. Construye `x = I_in + j Q_in` e `y = I_out + j Q_out`. No une I/Q con tiempos diferentes.
-2. **InputSCSReader** extrae valores por instancia y análisis, une líneas continuadas y respeta comentarios/cadenas. Conserva literales e inclusiones sin ejecutarlas. No interpreta Spectre completo ni evalúa expresiones arbitrarias. Si hay varias fuentes `wsource` o varios análisis `tran`, solicita desambiguación mediante error explícito.
-3. **MetadataResolver** combina netlist, JSON anterior asociado a los mismos CSV y configuración manual; detecta conflictos. `previous_metadata` solo acepta coincidencia de SHA-256 de los cuatro CSV. No reutiliza EVM ni retardos anteriores.
-4. **SignalValidator** verifica valores finitos, orden temporal, uniformidad y compatibilidad de las rejillas. Registra el muestreo observado y las tolerancias. No remuestrea silenciosamente.
-5. **SignalPreprocessor** aplica solo el recorte inicial y la eliminación de DC habilitados. Por defecto ambos están desactivados.
-6. **SampleAligner** calcula correlación lineal por FFT con ceros suficientes, equivalente a `R[l] = sum(conj(x[n])*y[n+l])`, y maximiza `abs(R)` dentro del intervalo configurado. Un `D` positivo significa que se empareja `x[n]` con `y[n+D]`. No hay desplazamiento circular.
-7. **FractionalDelayRefiner**, opcional, ajusta una parábola a la magnitud del pico y aplica interpolación sinc con ventana Hann. Se descartan bordes sin soporte. Está desactivado en la configuración entregada. Es una aproximación local, no una búsqueda de retardo mediante EVM.
-8. **SymbolTimingSelector** evalúa `p=0,...,L-1` sobre el mismo número de símbolos completos. Para cada fase usa `X[k]=x_aligned[p+kL]` e `Y[k]=y_aligned[p+kL]`. Selecciona el mínimo EVM; con empate dentro de la tolerancia elige la fase menor. `symbol_phase` permite fijar una fase manual sin perder los diagnósticos de las demás.
-9. **EVMCalculator** estima `alpha = sum(conj(X)*Y)/sum(abs(X)**2)` y calcula `100*sqrt(sum(abs(Y-alpha*X)**2)/sum(abs(alpha*X)**2))`. La referencia es la entrada medida ajustada, no una constelación QAM ideal. Las referencias de energía nula o despreciable se rechazan.
-10. **StatisticsCalculator**, **MetadataProcessor**, **CSVWriter**, **JSONWriter** y **Grapher** generan estadísticas, trazabilidad y archivos. La forma de onda conserva ganancia/fase; la compensación no se aplica al CSV completo.
+## Workflow and methods
 
-El programa usa arrays NumPy tipados en sus objetos de datos en lugar de DataFrames: mantiene los contratos del diseño sin requerir pandas. Los datos tabulares se exportan como CSV.
+1. **CSVReader** reads two comma-separated columns with a header: time in seconds and the signal value. It constructs `x = I_in + j Q_in` and `y = I_out + j Q_out`. I/Q channels with incompatible times are rejected.
+2. **InputSCSReader** extracts values by instance and analysis, joins continued lines, and respects comments and quoted strings. It preserves literals and include statements without executing them. It does not interpret the complete Spectre language or evaluate arbitrary expressions. Multiple `wsource` sources or `tran` analyses cause an explicit ambiguity error.
+3. **MetadataResolver** combines the netlist, previous JSON associated with the same CSV files, and manual configuration while detecting conflicts. `previous_metadata` requires matching SHA-256 hashes for all four CSV files. Previous EVM values and delays are not reused.
+4. **SignalValidator** checks finite values, time order, grid uniformity, and channel compatibility. It records observed sampling and tolerances. It never silently resamples.
+5. **SignalPreprocessor** applies only enabled initial cropping and DC removal. Both are disabled by default.
+6. **SampleAligner** calculates zero-padded linear FFT correlation, equivalent to `R[l] = sum(conj(x[n])*y[n+l])`, and maximizes `abs(R)` within the configured range. Positive `D` pairs `x[n]` with `y[n+D]`. No circular shift is used.
+7. **FractionalDelayRefiner**, disabled by default, fits a parabola around the correlation-magnitude peak and applies Hann-windowed sinc interpolation. Samples without full interpolation support are discarded. This is a local approximation, not an EVM-based delay search.
+8. **SymbolTimingSelector** evaluates `p=0,...,L-1` with the same number of complete symbols. Each phase uses `X[k]=x_aligned[p+kL]` and `Y[k]=y_aligned[p+kL]`. It selects minimum EVM; ties within tolerance select the lowest phase. `symbol_phase` fixes a manual phase while retaining diagnostics for every phase.
+9. **EVMCalculator** estimates `alpha = sum(conj(X)*Y)/sum(abs(X)**2)` and calculates `100*sqrt(sum(abs(Y-alpha*X)**2)/sum(abs(alpha*X)**2))`. The reference is the fitted measured input, not an ideal QAM constellation. Zero-energy or negligible-energy references are rejected.
+10. **StatisticsCalculator**, **MetadataProcessor**, **CSVWriter**, **JSONWriter**, and **Grapher** generate statistics, provenance, and files. Full waveforms retain their gain and phase; compensation is not applied to the complete CSV.
 
-## Parámetros que conviene conocer
+The data objects contain typed NumPy arrays rather than DataFrames, so pandas is not required. Tabular outputs use CSV. All generated plots, summaries, messages, and diagnostic descriptions are in English; preserved source text remains unchanged.
 
-| Opción | Valor entregado | Interpretación |
+## Standalone parameters
+
+These values describe this package's historical standalone `config.json`. The unified pipeline has its own configuration, including the verified source bit-rate interpretation.
+
+| Option | Standalone value | Meaning |
 |---|---:|---|
-| `samples_per_symbol` | 16 | Hipótesis explícita para este experimento. Puede ser `null` para resolver desde otras fuentes. |
-| `samples_per_symbol_verified` | false | Se advierte que el significado físico de L sigue pendiente de verificación. |
-| `source_data_rate_is_bit_rate` | false | No interpreta `MSource_DataRate` como bits/s automáticamente. |
-| `max_delay_samples` | 128 | Búsqueda inicial configurable de −128 a +128 muestras. |
-| `minimum_overlap_fraction` | 0.8 | Exige al menos 80 % de la longitud del registro más corto. |
-| `fractional_refinement` | false | Alineación entera en la ejecución predeterminada. |
-| `additional_initial_crop_s` | 0 | No elimina otros 8 ns: los CSV ya empiezan en 8 ns. |
-| `remove_dc` | false | No altera medias automáticamente. |
-| `time_rtol` | 1e-5 | Tolerancia relativa al intervalo de muestreo, no al tiempo absoluto. |
-| `time_atol_s` | 1e-18 | Tolerancia absoluta adicional en segundos. |
-| `minimum_symbols` | 16 | Mínimo para ejecutar la búsqueda de fase. |
-| `symbol_phase` | null | Búsqueda automática; un entero permite fase manual. |
+| `samples_per_symbol` | 16 | Explicit hypothesis for this experiment; `null` resolves it from other sources. |
+| `samples_per_symbol_verified` | false | Warns that the physical interpretation of L has not been verified. |
+| `source_data_rate_is_bit_rate` | false | Does not automatically interpret `MSource_DataRate` as bits/s. |
+| `max_delay_samples` | 128 | Configurable search from −128 to +128 samples. |
+| `minimum_overlap_fraction` | 0.8 | Requires at least 80% of the shorter record's length. |
+| `fractional_refinement` | false | Uses integer alignment by default. |
+| `additional_initial_crop_s` | 0 | Does not remove another 8 ns from CSV files already starting at 8 ns. |
+| `remove_dc` | false | Does not change signal means automatically. |
+| `time_rtol` | 1e-5 | Tolerance relative to the sample interval, not absolute time. |
+| `time_atol_s` | 1e-18 | Additional absolute tolerance in seconds. |
+| `minimum_symbols` | 16 | Minimum required for phase selection. |
+| `symbol_phase` | null | Automatic search; an integer selects a manual phase. |
 
-En estos CSV el intervalo mediano es 250 ps. Hay pequeñas variaciones de hasta aproximadamente 1.81 fs entre pasos, comunes a los cuatro canales; se admite una tolerancia de unos 2.501 fs y se conservan los tiempos originales. No se elimina ninguna fila por esa variación. El retardo temporal exportado es la mediana de las diferencias de tiempos de las parejas alineadas; también se conserva el retardo nominal obtenido del muestreo.
+The original verified CSV files have a median interval of 250 ps. Small step variations up to approximately 1.81 fs occur on all four channels. A tolerance of about 2.501 fs accepts these variations while preserving original times and all rows. The exported physical delay is the median time difference between aligned pairs; the nominal delay inferred from sampling is also retained.
 
-`oversample=4` se conserva como parámetro de la fuente y **no** se usa como muestras por símbolo del CSV. Las 16 muestras por símbolo son coherentes con 1 Gbit/s, 16-QAM y 250 ps, si se confirma esa interpretación de DataRate. Una `symbol_rate_hz` manual puede aportarse dentro de `manual_metadata.signal_config`; se rechaza si contradice L. Para guardar una relación declarada como verificada se requiere modificar explícitamente la configuración.
+`oversample=4` is retained as a source parameter and **is not** treated as the CSV samples-per-symbol ratio. Sixteen samples per symbol are consistent with 1 Gbit/s, 16-QAM, and 250 ps when DataRate means bit rate. A manual `symbol_rate_hz` may be provided in `manual_metadata.signal_config`; conflicts with L are rejected. Declaring the relationship verified requires an explicit configuration setting.
 
-## Archivos de salida
+## Standalone output files
 
-Cada ejecución crea `data/output/run_<fecha UTC>/`. `latest_run.json` apunta a la última exportación terminada. Las ejecuciones anteriores se conservan.
+Each standalone execution creates `data/output/run_<UTC timestamp>/`. `latest_run.json` points to the latest completed export; earlier runs remain intact. The unified entry point manages its separate run structure described in the repository root README.
 
-| Archivo | Contenido |
+| File | Contents |
 |---|---|
-| `aligned_waveform.csv` | Todas las parejas alineadas, índices de origen, tiempos e I/Q. |
-| `selected_symbols.csv` | Símbolos, referencia `alpha*X` y error complejo. |
-| `correlation_diagnostics.csv` | Correlación, diagnóstico normalizado y solapamiento por retardo. |
-| `symbol_phase_candidates.csv` | EVM, alfa y estado de cada fase. |
-| `metadata.json` | Exactamente los cuatro bloques acordados. |
-| `summary.txt` | Resumen legible, resultado y advertencias. |
-| `01_cross_correlation.png` | Búsqueda del retardo. |
-| `02_aligned_waveforms.png` | Primeras 512 muestras alineadas, sin normalizar amplitudes. |
-| `03_evm_vs_phase.png` | EVM de cada fase. |
-| `04_constellations.png` | Entrada medida y comparación salida/referencia lineal. |
-| `05_symbol_error.png` | Magnitud del error por símbolo. |
+| `aligned_waveform.csv` | All aligned pairs, source indices, times, and I/Q values. |
+| `selected_symbols.csv` | Symbols, reference `alpha*X`, and complex error. |
+| `correlation_diagnostics.csv` | Correlation, normalized diagnostics, and overlap for each delay. |
+| `symbol_phase_candidates.csv` | EVM, alpha, and status for each phase. |
+| `metadata.json` | The four metadata sections described below. |
+| `summary.txt` | Human-readable results and warnings. |
+| `01_cross_correlation.png` | Delay search. |
+| `02_aligned_waveforms.png` | First 512 aligned samples without amplitude normalization. |
+| `03_evm_vs_phase.png` | EVM for every phase. |
+| `04_constellations.png` | Measured input and output versus the fitted linear reference; symbol samples only. |
+| `05_symbol_error.png` | Error magnitude per symbol. |
 
-JSON contiene `simulation_config`, `signal_config`, `processing` y `statistics`. Las rutas de procedencia son relativas a la configuración. También guarda SHA-256, opciones efectivas, versiones, orígenes de campos, candidatos y estado de cada etapa. Las rutas internas que aparezcan en literales del netlist son documentación de la simulación; el procesador no las abre.
+The JSON sections are `simulation_config`, `signal_config`, `processing`, and `statistics`. Source paths are relative to the configuration. Metadata also records SHA-256 hashes, effective options, versions, field provenance, candidate scores, and stage status. Paths within netlist literals document the simulation; the processor never opens them.
 
-Sin netlist, la alineación puede continuar y L puede venir de configuración manual. Si falta L, se exportan la forma de onda y la correlación, y se marca el EVM como omitido. Los errores de datos esenciales devuelven código de salida 1. Una exportación interrumpida lleva `FAILED.txt` y no reemplaza el puntero `latest_run.json`.
+The standalone processor can align data without a netlist when configuration provides L. If L is unavailable, it exports the waveform and correlation and marks EVM as skipped. The unified pipeline separately requires an `input` netlist for each dataset. Essential data errors return exit code 1. An interrupted export contains `FAILED.txt` and does not replace `latest_run.json`.
 
-## Interpretación de los resultados
+## Interpreting results
 
-La fase y alfa se optimizan y evalúan sobre el mismo registro: este EVM es un resultado ajustado, **no una validación independiente**. No se usa el antiguo criterio de elegir primero la fase por cercanía a QAM ideal, ni la partición 70/30 del script anterior, porque el procedimiento acordado define entrada medida y búsqueda por error entrada/salida. La distorsión dependiente de amplitud y la memoria permanecen en el residuo.
+Phase and alpha are fitted and evaluated on the same record: this is **fitted EVM, not independent validation**. The processor does not select phase by distance to ideal QAM or apply the old script's 70/30 split. It uses the measured input and input/output error. Amplitude-dependent distortion and memory remain in the residual.
 
-El resultado caracteriza todo el trayecto entre los nodos I/Q exportados. Si incluye filtros o moduladores, no debe atribuirse exclusivamente al PA sin una caracterización adicional.
+The result characterizes the entire path between the exported I/Q nodes. If the path contains filters or modulators, additional characterization is needed to attribute the result exclusively to the PA.
 
-La primera ejecución verificada sobre las copias entregadas, sin refinamiento, obtuvo:
+The first historical verified run, without fractional refinement, obtained:
 
-- 8.769 muestras por canal; 8.766 parejas alineadas.
-- Retardo: 3 muestras, aproximadamente 0.75 ns.
-- Fase elegida: 6 respecto del inicio alineado; 547 símbolos.
-- EVM RMS: aproximadamente 22.29665 %, usando L=16 sin verificar.
+- 8,769 samples per channel and 8,766 aligned pairs.
+- A delay of 3 samples, approximately 0.75 ns.
+- Phase 6 relative to the aligned start, with 547 symbols.
+- Approximately 22.29665% RMS EVM, using the then-unverified L=16.
 
-Estos valores son de la configuración entregada. Cambiar recortes, fase, referencia, DC o refinamiento puede cambiar las métricas.
+These historical values depend on that configuration. Cropping, phase, reference, DC removal, and refinement can change the metrics.
 
-## Pruebas
+## Tests
 
-En un entorno virtual con los requisitos instalados:
+With the requirements installed:
 
 ```text
 python -m unittest discover -s tests -v
 ```
 
-Sin activar el entorno, ejecuta `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`. No añadas la carpeta antigua `.runtime_deps` a `PYTHONPATH`.
+Without activating the environment, use `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`. Do not add the old `.runtime_deps` directory to `PYTHONPATH`.
 
-Las pruebas comprueban correlación contra la suma directa, retardos positivos/negativos, rotación, orígenes temporales distintos, un EVM analítico conocido, energía nula, persistencia de no linealidad, tiempos inválidos, fase conocida, refinamiento fraccional, parsing del netlist, configuración incoherente, metadatos previos incompatibles y reconstrucción del EVM desde los CSV exportados.
+Tests cover FFT correlation against direct summation, positive and negative delays, rotation, different time origins, analytical EVM, zero energy, retained nonlinearity, invalid times, known symbol phase, fractional refinement, netlist parsing, inconsistent configuration, and stale metadata. The real-data integration test additionally reconstructs EVM from exported CSV files; it requires the local dataset configured in `config.json`, which is not included in the public repository.

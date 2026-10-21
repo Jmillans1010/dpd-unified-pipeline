@@ -1,4 +1,4 @@
-"""Entrada CLI. Las rutas de config.json se resuelven desde su propia carpeta."""
+"""CLI entry point. Resolve config.json paths relative to its own directory."""
 from pathlib import Path
 from datetime import datetime, timezone
 import argparse
@@ -7,8 +7,8 @@ import os
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-# Las extensiones binarias se cargan del intérprete seleccionado, nunca de
-# .runtime_deps: esa carpeta puede contener wheels de otra versión de Python.
+# Load binary extensions from the selected interpreter, never from
+# .runtime_deps, which may contain wheels built for another Python version.
 os.environ.setdefault("MPLCONFIGDIR", str(PROJECT_ROOT/".mplconfig"))
 
 from iq_processor.models import ProcessingConfig, ProcessingError
@@ -18,9 +18,9 @@ from iq_processor.outputs import CSVWriter, JSONWriter, Grapher, write_summary
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Alineación compleja y EVM del trayecto I/Q de un PA.")
-    parser.add_argument("--config", default="config.json", help="Ruta relativa al proyecto (o absoluta) de la configuración.")
-    parser.add_argument("--no-plots", action="store_true", help="Exportar CSV/JSON sin generar imágenes.")
+    parser = argparse.ArgumentParser(description="Complex alignment and EVM of a PA I/Q signal path.")
+    parser.add_argument("--config", default="config.json", help="Configuration path, absolute or relative to the project.")
+    parser.add_argument("--no-plots", action="store_true", help="Export CSV/JSON without generating images.")
     args = parser.parse_args(argv)
     config_path = Path(args.config)
     if not config_path.is_absolute():
@@ -56,7 +56,7 @@ def main(argv=None):
         JSONWriter().write({"directory": stamp, "metadata": f"{stamp}/metadata.json",
                             "summary": f"{stamp}/summary.txt"}, output_root/"latest_run.json")
         print((run_dir/"summary.txt").read_text(encoding="utf-8"))
-        print("Resultados:", Path(os.path.relpath(run_dir, PROJECT_ROOT)).as_posix())
+        print("Results:", Path(os.path.relpath(run_dir, PROJECT_ROOT)).as_posix())
         return 0
     except (ProcessingError, OSError, ValueError, ImportError) as exc:
         if run_dir is not None:

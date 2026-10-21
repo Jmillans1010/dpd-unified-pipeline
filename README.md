@@ -1,18 +1,18 @@
-# Pipeline unificado de predistorsión digital
+# Unified digital predistortion pipeline
 
-Lee dos conjuntos independientes de cuatro CSV I/Q y un `input` Spectre, diagnostica y alinea cada conjunto, entrena MP/EMP/GMP/Pruned Volterra/LUT, selecciona por validación y exporta PWL para Cadence. Las constelaciones finales contienen **solo instantes de símbolo**, con ejes I/Q en voltios.
+Read two independent datasets containing four I/Q CSV files and a Spectre `input` file, diagnose and align each dataset, train MP/EMP/GMP/Pruned Volterra/LUT models, select a model using validation data, and export PWL signals for Cadence. Final constellation plots contain **symbol instants only**, with I/Q axes in volts. Newly generated reports, plot labels, messages, and output descriptions are in English.
 
-Python >=3.10. Instalación en Windows:
+Python >=3.10. Install and run on Windows:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\ejecutar.ps1
+.\run.ps1
 ```
 
-En Linux/macOS usar `.venv/bin/python run_pipeline.py`. Las rutas del JSON se resuelven respecto a ese JSON, no respecto al directorio desde el que se ejecuta. Abrir `dpd-unified-pipeline.code-workspace` para trabajar en VS Code. El lanzador Windows también acepta `DPD_PYTHON` apuntando a un entorno preparado. Si falta `.venv`, puede reutilizar el entorno existente de `../procesador_iq_pa/.venv`, anunciándolo al ejecutar.
+On Linux/macOS, use `.venv/bin/python run_pipeline.py`. Paths in a configuration JSON are resolved relative to that file, regardless of the current working directory. Open `dpd-unified-pipeline.code-workspace` to work in VS Code. The Windows launcher also accepts `DPD_PYTHON` pointing to a prepared Python environment. If `.venv` is unavailable, it can reuse the existing environment at `../procesador_iq_pa/.venv` and reports this choice when it runs. `ejecutar.ps1` remains available as a backward-compatible alias for `run.ps1`.
 
-## Datos oficiales y configuración
+## Required datasets and configuration
 
 ```text
 dataset/
@@ -30,89 +30,125 @@ dataset/
     input
 ```
 
-Cada CSV tiene dos columnas: tiempo en segundos y voltaje, con cabeceras Cadence como `/I_IN X,/I_IN Y` (la X es tiempo, no otro canal). También se admite la cabecera explícita `time_s,voltage_V`. Las unidades se declaran en `pipeline.json`; no se deducen de la amplitud. No se admite muestreo irregular ni se remuestrea silenciosamente.
+Each CSV contains two columns: time in seconds and voltage, with Cadence headers such as `/I_IN X,/I_IN Y` (`X` denotes time, not another signal channel). The explicit header `time_s,voltage_V` is also supported. Units are declared in `pipeline.json`; they are not inferred from signal amplitude. Irregular sampling is rejected, and signals are not silently resampled.
 
-`input` es texto Spectre, obligatorio, no contiene las muestras. Se reutiliza `InputSCSReader`: extrae la fuente y el transitorio, conserva literales e inclusiones y **no ejecuta** netlists ni archivos referenciados. El parser soporta el subconjunto documentado por el proyecto original, no todo el lenguaje Spectre. Varios wsource/tran o expresiones esenciales no resueltas requieren desambiguación.
+`input` is a required Spectre text file; it does not contain the waveform samples. The existing `InputSCSReader` extracts source and transient settings, preserves literals and include statements, and **does not execute** netlists or referenced files. The parser supports the subset documented by the original project, rather than the entire Spectre language. Multiple wsource/tran declarations or unresolved essential expressions require explicit disambiguation.
 
-La fuente confirmada es QAM16, Data rate **en bits/s**, OFDM=No. Se calcula Rs=Rb/log2(M); Fs se mide en los CSV. Con Rb=1G y Ts=250ps resulta L=16 muestras por símbolo. Se valida Fs/Rs entero y la coherencia con strobeperiod; `oversample` de la fuente no se usa como L del CSV. La conversión automática rechaza OFDM.
+The confirmed source uses QAM16, a data rate **in bits/s**, and OFDM=No. The pipeline calculates Rs=Rb/log2(M) and measures Fs from the CSV time columns. For Rb=1G and Ts=250ps, this gives L=16 samples per symbol. It checks that Fs/Rs is an integer and that the CSV time grid agrees with strobeperiod. The source's `oversample` setting is not used as the CSV samples-per-symbol value. Automatic bit-rate conversion rejects OFDM.
 
-La copia local de este proyecto usa `training_data` y `Validation_1`. **Validation_0 está excluido.** Los originales no se alteran: cada ejecución conserva un snapshot de los cinco archivos y sus hashes. El usuario declaró configuración común y semillas diferentes; los valores exactos se conservan como desconocidos salvo que se aporten en `seed_provenance` o estén en los parámetros del netlist. Semillas distintas no prueban independencia de PN9.
+The local copy of this project uses `training_data` and `Validation_1`. **Validation_0 is excluded.** Original files remain unchanged: each run keeps byte-for-byte snapshots of all five files and their hashes. Source snapshots retain their original contents and language. The user confirmed a shared configuration with different seeds; exact seed values remain unknown unless supplied in `seed_provenance` or found in the netlist parameters. Different seeds alone do not establish independence for PN9 sequences.
 
-`dataset/` y `runs/` son locales y están excluidos de Git: no se publica el netlist del circuito, PDK, rutas de terceros ni resultados privados. Para un clon nuevo se necesitan los cinco archivos de cada conjunto. La demo siguiente funciona sin datos privados.
+`dataset/` and `runs/` are local and excluded from Git. Circuit netlists, PDK details, third-party paths, and private results are not published. A new clone requires the five files for each dataset. The following demo works without private data.
 
-## Demo reproducible
+## Reproducible demo
 
 ```powershell
 .\.venv\Scripts\python.exe make_demo.py dataset/demo
 .\.venv\Scripts\python.exe run_pipeline.py --config dataset/demo/demo.json
 ```
 
-Genera dos secuencias sintéticas distintas, con metadatos mínimos. **No son mediciones del PA ni una simulación de Spectre.** La carpeta de destino debe ser nueva.
+This generates two different synthetic sequences with minimal metadata. **They are neither PA measurements nor a Spectre simulation.** The destination directory must not already exist.
 
-## Flujo y selección
+## Processing and model selection
 
-1. Validación de archivos, cabeceras, finitud, unidades declaradas y rejillas temporales.
-2. Diagnóstico crudo con formas de onda, espectros de amplitud FFT, picos, RMS y PAPR.
-3. Alineación por correlación compleja, opcionalmente fraccional; recorte/DC configurables y documentados. Se preservan los cuatro módulos originales y su interfaz `aligned_waveform.csv` + `metadata.json`.
-4. Fase de símbolo y EVM inicial usando entrada medida con ganancia/fase ajustada; no se compara con QAM ideal. Se conservan la forma de onda completa y los símbolos en archivos separados.
-5. Ganancia G calculada exclusivamente con las muestras de entrenamiento válidas. Identificación inversa `F(y/G) ≈ x`.
-6. **BIC individual por familia sobre training únicamente.** El nuevo buscador recibe solo la partición de entrenamiento; nunca consulta validation. Mínimos cuadrados, bases, poda e interpolación LUT reutilizan los entrenadores originales.
-7. Evaluación de los cinco modelos seleccionados sobre **toda validation utilizable**, con soporte común y guardas. No se divide validation ni se crea un test final.
-8. Ganador: menor `nmse_waveform_db` de validación. Desempate por número de coeficientes y nombre. Es el conjunto usado para seleccionar, no una prueba independiente posterior.
-9. Constelaciones: mismos índices de símbolo, fase compartida y NMSE de símbolos en los títulos. También se exporta NMSE de toda la onda, errores RMS relativos y hardware estimado. No se ocultan errores/extremos en instantes de símbolo; vista global y zoom con conteo fuera de vista.
-10. Predistorsión `F(x)`, límite de voltaje y exportación; incluye el caso sin DPD con la misma interpolación.
+1. Validate files, headers, finite values, declared units, and time grids.
+2. Diagnose raw signals using waveforms, FFT amplitude spectra, peaks, RMS, and PAPR.
+3. Align input and output using complex correlation, optionally including fractional delay. Trimming and DC removal are configurable and recorded. The four original modules and their `aligned_waveform.csv` + `metadata.json` interface are preserved.
+4. Determine symbol phase and initial EVM using the measured input with fitted gain/phase; this is not an ideal-QAM comparison. Store complete waveforms and symbol samples separately.
+5. Calculate gain G exclusively from valid training samples. Fit the inverse relationship `F(y/G) ≈ x`.
+6. **Select each model family's structure using BIC on training data only.** The search receives only the training partition and never reads validation data. Least-squares fitting, basis construction, pruning, and LUT interpolation reuse the original trainers.
+7. Evaluate the five selected models on **all usable validation samples**, with common support and guard intervals. Validation is not split, and no additional final test partition is created.
+8. Select the winner by the lowest validation `nmse_waveform_db`. Break ties by coefficient count and then model name. This dataset is used for selection; it is not a subsequent independent test.
+9. Plot constellations using the same symbol indices and shared phase, with symbol NMSE in plot titles. Also export full-waveform NMSE, relative RMS errors, and hardware estimates. Errors and extreme values at symbol instants are retained. Provide both a full-range view and a zoomed view with out-of-view counts.
+10. Generate predistortion `F(x)`, apply the voltage limit, and export signals. Include a no-DPD reference using the same interpolation.
 
-La fase se obtiene del registro original de validación, antes de comparar reconstrucciones; no se ajusta una fase por modelo para favorecerlo. La selección de símbolos solo afecta figuras y métricas de símbolos: se mantienen todas las muestras válidas en el entrenamiento y la inferencia con memoria.
+Symbol phase is determined from the original validation record before comparing reconstructions. It is not adjusted separately for each model. Symbol selection affects only symbol plots and metrics: training and inference with memory retain all valid waveform samples.
 
-## Explorar estructuras mayores
+## Explore larger model structures
 
-Los máximos predeterminados son MP/EMP P15 M12, GMP P15 M12 Q4, Volterra P9 M6 D2 y LUT hasta 1024. M es máximo retardo (incluye 0..M); los órdenes son impares. El límite de términos es 4096.
+The default maximum structures are MP/EMP P15 M12, GMP P15 M12 Q4, Volterra P9 M6 D2, and LUT with up to 1024 nodes. M is the maximum delay, including delays 0..M; polynomial orders are odd. The basis limit is 4096 terms.
 
-`search.plateau_extra_depth=2` explora hasta dos niveles adicionales después de un nivel sin mejora; `beam_width=3` conserva tres rutas válidas por nivel. Se mantiene siempre el mejor BIC encontrado: no obliga a escoger el candidato más grande. `0` desactiva esa extensión. Sigue siendo búsqueda acotada/local, no óptimo global.
+`search.plateau_extra_depth=2` explores up to two additional levels after a level without improvement; `beam_width=3` retains three valid paths per level. The best BIC found is always retained, so exploring larger structures does not require selecting a larger model. Set the extra depth to `0` to disable this extension. The search remains bounded and local; it does not guarantee a global optimum.
 
-Hay presupuestos de 150 iteraciones, 180 candidatos por familia y una estimación de memoria de 1024 MiB (6 matrices complejas N×K). Es una estimación preventiva, no un límite duro de RAM. Se registran candidatos descartados por recursos, rango o condicionamiento. Una frontera inválida se informa como incompleta; no se confunde con un mínimo global.
+The budgets are 150 iterations, 180 candidates per model family, and an estimated working memory of 1024 MiB, calculated as six complex N×K matrices. This is a preventive estimate, not a hard RAM limit. Candidates rejected because of resources, rank, or conditioning are recorded. An invalid search boundary is reported as incomplete, rather than presented as a global minimum.
 
-Modificar los máximos de memoria cambia el contexto común y el número de muestras puntuadas. Consulte los índices y guardas del manifest antes de comparar ejecuciones diferentes.
+Changing maximum memory depths changes the common context and the number of scored samples. Check the manifest's indices and guard intervals before comparing different runs.
 
-## PWL y límite de 3 V
+## Run directory layout
 
-`export.overflow_policy=zero_pair`: después de `voltage_scale`, si abs(I)>3 V **o** abs(Q)>3 V se ponen **I=Q=0** para esa muestra. Exactamente ±3 V se conserva. No es clipping. Se conservan valores previos, valores exportados, máscara e índices afectados; los valores no finitos se rechazan. La política `reject` permite bloquear una exportación que exceda el límite.
+Each execution creates a separate `runs/run_<UTC>/` directory. Its four main folders separate diagnostics, fitted models, model comparisons, and export files:
 
-`exports/<modelo>/I.txt` y `Q.txt`: dos columnas ASCII, segundos y voltios. Incluye `samples.csv` con señal deseada, predistorsión original, exportada e índices de símbolo. `metadata.json` guarda hashes, estadísticas, origen temporal, escala, contexto y puntos afectados. `export.models` admite `all` o `winner`.
+```text
+runs/
+  latest_run.json
+  run_<UTC>/
+    manifest.json
+    diagnostics/
+      training/
+      validation/
+    model_results/
+      MP.json
+      EMP.json
+      GMP.json
+      PrunedVolterra.json
+      LUT.json
+    model_comparisons/
+      metrics.json
+      report.md
+      plots/
+      ... CSV comparison files
+    outputs/
+      MP/
+      EMP/
+      GMP/
+      PrunedVolterra/
+      LUT/
+      no_dpd/
+```
 
-Políticas `zero_pad` (N muestras, bordes identificados) y `trim` (solo contexto válido). GMP puede usar muestras futuras: se registra el adelanto y es generación offline. La interpolación puede ser `linear` o `zoh` con `0 < transition_s < Ts`. ZOH usa una rampa finita; no hay tiempos repetidos. El archivo reinicia el tiempo en 0; el origen previo se conserva en metadatos. No hay repetición automática del segmento.
+`diagnostics/` holds source snapshots, alignment results, initial EVM, statistics, and diagnostic figures for each dataset. `model_results/` holds model coefficients and optimization traces. `model_comparisons/` holds comparison metrics, CSV files, the report, and final plots. `outputs/` holds the exported PWL signals and their metadata. The selected processing stage determines which files are populated; `export.models=winner` exports only the winning model and the no-DPD reference.
 
-Conectar los PWL a las entradas I/Q del modulador de Cadence, sustituyendo la fuente original; no conectarlos directamente al PA RF ni poner fuentes ideales en paralelo. El paso RF del simulador y el muestreo baseband son distintos. Consulte `framework_dpd/cadence_bridge/README.md` para detalles del adaptador original; sus ejemplos históricos de límite 2 V no sustituyen los 3 V del pipeline nuevo.
+`latest_run.json` is updated only after successful completion. An error leaves a manifest with status `failed`. Existing runs are preserved, including their original directory names and language; the new layout and English text apply to newly generated results.
 
-## Ejecutar solo una etapa o recargar modelos
+## PWL export and the 3 V limit
+
+With `export.overflow_policy=zero_pair`, after applying `voltage_scale`, any sample with abs(I)>3 V **or** abs(Q)>3 V is replaced with **I=Q=0**. Values exactly equal to ±3 V are retained. This is not clipping. Values before modification, exported values, the affected-sample mask, and affected indices are saved; nonfinite values are rejected. The `reject` policy instead blocks an export that exceeds the limit.
+
+`outputs/<model>/I.txt` and `Q.txt` contain two ASCII columns: seconds and volts. Each model directory also contains `samples.csv` with the desired signal, original predistortion, exported signal, and symbol indices. `metadata.json` records hashes, statistics, time origin, scale, context, and affected samples. `export.models` accepts `all` or `winner`.
+
+Supported boundary policies are `zero_pad` (N samples, with boundaries identified) and `trim` (valid context only). GMP can use future samples: lookahead is recorded, and waveform generation is offline. Interpolation can be `linear` or `zoh` with `0 < transition_s < Ts`. ZOH uses a finite ramp without repeated timestamps. The exported time starts at 0, and the original time origin is retained in metadata. The segment is not automatically repeated.
+
+Connect the PWL signals to the Cadence modulator's I/Q inputs, replacing the original source. Do not connect them directly to the RF PA or place ideal voltage sources in parallel. The simulator's RF time step and baseband sampling interval are different quantities. See `framework_dpd/cadence_bridge/README.md` for the original adapter's details. Its standalone exporter rejects out-of-range signals; the unified pipeline applies the configured zero-pair policy before calling that exporter.
+
+## Run a single stage or reload models
 
 ```powershell
 .\.venv\Scripts\python.exe run_pipeline.py --stage preprocess
-.\.venv\Scripts\python.exe run_pipeline.py --models-dir runs/run_FECHA --stage compare
-.\.venv\Scripts\python.exe run_pipeline.py --models-dir runs/run_FECHA
+.\.venv\Scripts\python.exe run_pipeline.py --models-dir runs/run_TIMESTAMP --stage compare
+.\.venv\Scripts\python.exe run_pipeline.py --models-dir runs/run_TIMESTAMP
 .\.venv\Scripts\python.exe run_pipeline.py --no-plots
 ```
 
-`--models-dir` acepta una ejecución unificada, su carpeta `models`, o una ejecución del framework original con manifest y cinco JSON. Reutiliza G original y copia los modelos sin cambiar coeficientes. Sin esa opción, `compare` incluye entrenamiento y comparación, pero no PWL. No hay evaluación de test escondida.
+`--models-dir` accepts a unified run directory, its `model_results/` directory, the legacy `models/` directory, or an original-framework run containing a manifest and five model JSON files. It reuses the original G and copies models without changing their coefficients. Without this option, `compare` performs training and comparison but does not export PWL signals. There is no hidden test evaluation.
 
-Cada ejecución crea `runs/run_<UTC>/` y actualiza `latest_run.json` solo al terminar. Un error deja un manifest `failed`; no modifica resultados previos. `preprocessed/` contiene snapshots, alineación, EVM, estadísticas y gráficos; `models/` contiene los modelos y trazas; `comparison/` contiene las figuras finales y métricas; `exports/` contiene los PWL. `report.md` resume resultados.
+## Cadence feedback
 
-## Retorno de Cadence
-
-Después de simular, exportar cuatro CSV (I/Q de entrada y salida) y su `input`, con nombres de validation, a una carpeta nueva:
+After simulation, export four CSV files containing input/output I/Q and their `input` file into a new directory, using the validation filenames:
 
 ```powershell
-.\.venv\Scripts\python.exe run_pipeline.py --feedback-dir ruta/retorno --reference-run runs/run_FECHA --feedback-model MP
+.\.venv\Scripts\python.exe run_pipeline.py --feedback-dir path/to/feedback --reference-run runs/run_TIMESTAMP --feedback-model MP
 ```
 
-La referencia se recupera de `exports/MP/samples.csv`: es la señal **deseada**, no la predistorsionada medida en I_IN/Q_IN. Se alinea la salida, se usa G fijo del entrenamiento y los índices de símbolo de la referencia. Produce NMSE, EVM, AM/AM, AM/PM y constelación de símbolos. El recorte de asentamiento se controla explícitamente con la configuración. Comparar con un retorno `--feedback-model sin_dpd` bajo condiciones equivalentes. No lanza Spectre ni reentrena automáticamente.
+The reference is loaded from `outputs/MP/samples.csv`: it is the **desired** signal, not the predistorted signal measured at I_IN/Q_IN. The output is aligned using the fixed training gain G and the reference's symbol indices. The pipeline produces NMSE, EVM, AM/AM, AM/PM, and a symbol constellation. Settling-time trimming is explicitly controlled in the configuration. Compare against feedback using `--feedback-model no_dpd` under equivalent conditions. Legacy runs using `exports/` and the reference name `sin_dpd` remain readable. This command neither launches Spectre nor automatically retrains models.
 
-## Pruebas y alcance
+Feedback runs use the same four-folder layout. `diagnostics/` contains feedback source snapshots and aligned signals; `model_comparisons/` contains feedback metrics and figures. Folders for stages that do not run may remain empty.
+
+## Tests and scope
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Se comprueban cinco modelos de extremo a extremo, inferencia del reloj, índices comunes de símbolos, BIC de entrenamiento, exploración que cruza un candidato peor, límites de voltaje y PWL, recarga sin reajustar coeficientes, fuentes intactas, errores de entrada y retorno sintético con ganancia conocida. Los tests originales se conservan en las carpetas de ambos proyectos; algunos requieren sus datasets históricos locales.
+The tests cover all five models end to end, clock inference, common symbol indices, training-only BIC, exploration past a worse candidate, voltage limits and PWL, model reloading without coefficient changes, unchanged source files, invalid inputs, and synthetic feedback with known gain. Original tests are retained within both source projects; some require their historical local datasets. See `VERIFICATION.md` for the validation record and any checks still pending for this revision.
 
-La validación sobre PA real simulado en Spectre sigue pendiente. No se reporta ACLR sin una medición y definición de bandas. El hardware es estimado, sin síntesis ni cuantización. El pipeline completo requiere Python moderno; solo el evaluador portable del adaptador original mantiene su diseño compatible con Python 3.6.
+PA validation through a Spectre simulation remains pending. ACLR is not reported without a measurement and defined frequency bands. Hardware figures are estimates, without synthesis or quantization. The full pipeline requires modern Python; only the original adapter's portable evaluator retains its Python 3.6-compatible design.
