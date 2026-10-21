@@ -1,0 +1,44 @@
+{
+  "training_dir": "dataset/training",
+  "validation_dir": "dataset/validation",
+  "output_dir": "runs",
+  "source_units": {"time": "s", "amplitude": "V"},
+  "seed_provenance": {"training": null, "validation": null, "declaration": "User confirms different seeds; exact values unavailable. Common input copied by user."},
+  "preprocessing": {
+    "samples_per_symbol": null,
+    "source_data_rate_is_bit_rate": true,
+    "samples_per_symbol_verified": true,
+    "remove_dc": false,
+    "additional_initial_crop_s": 0,
+    "fractional_refinement": false,
+    "max_delay_samples": 128,
+    "minimum_overlap_fraction": 0.8,
+    "minimum_symbols": 16
+  },
+  "models": {
+    "MP": {"max_P": 15, "max_M": 12},
+    "EMP": {"max_P": 15, "max_M": 12},
+    "GMP": {"max_P": 15, "max_M": 12, "max_Q": 4},
+    "PrunedVolterra": {"max_P": 9, "max_M": 6, "max_D": 2},
+    "LUT": {"min_bins": 8, "max_bins": 1024}
+  },
+  "search": {
+    "max_iterations": 150,
+    "max_candidates": 180,
+    "plateau_extra_depth": 2,
+    "beam_width": 3,
+    "max_basis_terms": 4096,
+    "max_working_mib": 1024
+  },
+  "numerics": {"condition_limit": 10000000000.0, "rcond": 1e-12},
+  "hardware": {"mode": "direct", "word_bits": 18},
+  "export": {
+    "models": "all",
+    "max_abs_voltage": 3.0,
+    "overflow_policy": "zero_pair",
+    "voltage_scale": 1.0,
+    "boundary": "zero_pad",
+    "interpolation": "linear",
+    "transition_s": null
+  }
+}

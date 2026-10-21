@@ -1,0 +1,49 @@
+{
+  "inputs": {
+    "training": "data/input/training",
+    "validation": "data/input/Validation"
+  },
+  "split_mode": "validation_holdout",
+  "validation_fraction": 0.5,
+  "output_directory": "data/dpd_results",
+  "guard_samples": null,
+  "max_basis_terms": 4096,
+  "models": {
+    "MP": {
+      "max_P": 15,
+      "max_M": 12
+    },
+    "EMP": {
+      "max_P": 15,
+      "max_M": 12
+    },
+    "GMP": {
+      "max_P": 15,
+      "max_M": 12,
+      "max_Q": 4
+    },
+    "PrunedVolterra": {
+      "max_P": 9,
+      "max_M": 6,
+      "max_D": 2
+    },
+    "LUT": {
+      "min_bins": 8,
+      "max_bins": 1024
+    }
+  },
+  "optimization": {
+    "stopping_rule": "bic",
+    "max_iterations": 150,
+    "tie_tolerance": 1e-05,
+    "complexity_mode": "structural"
+  },
+  "numerics": {
+    "condition_limit": 10000000000.0,
+    "rcond": 1e-12
+  },
+  "hardware": {
+    "mode": "direct",
+    "word_bits": 18
+  }
+}

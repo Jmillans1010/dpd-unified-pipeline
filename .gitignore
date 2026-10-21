@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.mplconfig/
+.pytest_cache/
+dataset/
+runs/
+framework_dpd/data/
+procesador_iq_pa/data/
+*.zip
+.env
+.env.*
+github_published.png

@@ -1,0 +1,27 @@
+{
+  "input_files": {
+    "I_in": "data/input/I_in_training.csv",
+    "Q_in": "data/input/Q_in_training.csv",
+    "I_out": "data/input/I_out_training.csv",
+    "Q_out": "data/input/Q_out_training.csv"
+  },
+  "netlist": "data/input/input",
+  "previous_metadata": null,
+  "output_directory": "data/output",
+  "manual_metadata": {},
+  "samples_per_symbol": 16,
+  "samples_per_symbol_verified": false,
+  "source_data_rate_is_bit_rate": false,
+  "additional_initial_crop_s": 0.0,
+  "remove_dc": false,
+  "time_atol_s": 1e-18,
+  "time_rtol": 1e-5,
+  "max_delay_samples": 128,
+  "minimum_overlap_fraction": 0.8,
+  "fractional_refinement": false,
+  "interpolation_half_width": 16,
+  "minimum_symbols": 16,
+  "symbol_phase": null,
+  "phase_tie_tolerance_pp": 1e-10,
+  "plots": true
+}
