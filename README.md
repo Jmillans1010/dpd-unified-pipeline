@@ -76,7 +76,7 @@ Changing maximum memory depths changes the common context and the number of scor
 
 ## Run directory layout
 
-Each execution creates a separate `runs/run_<UTC>/` directory. Its four main folders separate diagnostics, fitted models, model comparisons, and export files:
+Each execution creates a separate `runs/run_<UTC>/` directory. Its five main folders separate diagnostics, fitted models, model comparisons, export files, and references for simulation results:
 
 ```text
 runs/
@@ -104,11 +104,26 @@ runs/
       PrunedVolterra/
       LUT/
       no_dpd/
+    results/
+      EMP/
+        I_in.csv
+        Q_in.csv
+        reference_metadata.json
+        README.md
+      ... one folder per exported model and no_dpd
 ```
 
 `diagnostics/` holds source snapshots, alignment results, initial EVM, statistics, and diagnostic figures for each dataset. `model_results/` holds model coefficients and optimization traces. `model_comparisons/` holds comparison metrics, CSV files, the report, and final plots. `outputs/` holds the exported PWL signals and their metadata. The selected processing stage determines which files are populated; `export.models=winner` exports only the winning model and the no-DPD reference.
 
 `latest_run.json` is updated only after successful completion. An error leaves a manifest with status `failed`. Existing runs are preserved, including their original directory names and language; the new layout and English text apply to newly generated results.
+
+## References for simulation results
+
+Full runs prepare `results/<model>/I_in.csv` and `Q_in.csv`, including `results/no_dpd/`. These are the **desired input before predistortion**, copied from `I_desired_V` and `Q_desired_V` in the corresponding export's `samples.csv`. Each has two columns, `time_s,voltage_V`, with the exact exported time grid, trimming, and desired-signal scale. No PA amplification, phase shift, or predistortion is applied to these references.
+
+Use the PWL files in `outputs/<model>/` to drive Cadence. Later, place measured I_OUT and Q_OUT in the matching `results/<model>/` folder as `I_out.csv` and `Q_out.csv`, retaining their original timestamps. Output files are not fabricated or pre-created. Reference metadata records provenance and hashes, and preparing references again refuses to overwrite an existing model result directory.
+
+The result folder is a collection area, not a new automatic feedback input format. The existing `--feedback-dir` command still takes the five-file measured Cadence dataset described below. Compare outputs with the desired reference after alignment and compensation by the saved complex training gain; do not treat matching row numbers as proof of alignment.
 
 ## PWL export and the 3 V limit
 
@@ -141,7 +156,7 @@ After simulation, export four CSV files containing input/output I/Q and their `i
 
 The reference is loaded from `outputs/MP/samples.csv`: it is the **desired** signal, not the predistorted signal measured at I_IN/Q_IN. The output is aligned using the fixed training gain G and the reference's symbol indices. The pipeline produces NMSE, EVM, AM/AM, AM/PM, and a symbol constellation. Settling-time trimming is explicitly controlled in the configuration. Compare against feedback using `--feedback-model no_dpd` under equivalent conditions. Legacy runs using `exports/` and the reference name `sin_dpd` remain readable. This command neither launches Spectre nor automatically retrains models.
 
-Feedback runs use the same four-folder layout. `diagnostics/` contains feedback source snapshots and aligned signals; `model_comparisons/` contains feedback metrics and figures. Folders for stages that do not run may remain empty.
+Feedback runs use the same five-folder layout. `diagnostics/` contains feedback source snapshots and aligned signals; `model_comparisons/` contains feedback metrics and figures. Folders for stages that do not run may remain empty.
 
 ## Tests and scope
 

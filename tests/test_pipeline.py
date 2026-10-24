@@ -15,6 +15,7 @@ from dpd.search import MPSearchPolicy
 from dpd.hardware import DirectHardwareEstimator
 from unified_dpd.search import TrainingBICSearch
 from unified_dpd.layout import RUN_DIRECTORIES
+from unified_dpd.results import prepare_results
 
 
 class PipelineTests(unittest.TestCase):
@@ -126,12 +127,28 @@ class PipelineTests(unittest.TestCase):
                     self.assertEqual(digest(reused/"model_results"/name),sha)
                     self.assertEqual(digest(legacy/"models"/name),sha)
 
-    def test_preprocess_uses_the_same_four_categories(self):
+    def test_preprocess_uses_the_same_categories(self):
         result=run_pipeline(self.config_path,stage="preprocess",make_plots=False)
         self.assertEqual({p.name for p in result.iterdir() if p.is_dir()},set(RUN_DIRECTORIES))
         self.assertTrue((result/"diagnostics/validation/summary.txt").is_file())
         self.assertEqual(list((result/"outputs").iterdir()),[])
         self.assertEqual(list((result/"model_results").iterdir()),[])
+
+    def test_results_hold_desired_references_and_preserve_simulation_files(self):
+        for name in ["no_dpd",*self.config["models"]]:
+            samples=np.genfromtxt(self.result_dir/"outputs"/name/"samples.csv",delimiter=",",names=True)
+            folder=self.result_dir/"results"/name
+            for channel in ("I","Q"):
+                reference=np.genfromtxt(folder/f"{channel}_in.csv",delimiter=",",names=True)
+                np.testing.assert_array_equal(reference["time_s"],samples["time_s"])
+                np.testing.assert_array_equal(reference["voltage_V"],samples[f"{channel}_desired_V"])
+                self.assertFalse((folder/f"{channel}_out.csv").exists())
+        output=self.result_dir/"results/EMP/I_out.csv"
+        output.write_text("simulation output placeholder for overwrite protection test",encoding="utf-8")
+        original=digest(output)
+        with self.assertRaises(FileExistsError):
+            prepare_results(self.result_dir)
+        self.assertEqual(digest(output),original)
 
     def test_feedback_uses_desired_reference_and_fixed_gain(self):
         source=self.root/"feedback"; source.mkdir()

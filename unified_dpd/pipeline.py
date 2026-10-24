@@ -10,6 +10,7 @@ import numpy as np
 from . import __version__
 from .search import TrainingBICSearch
 from .layout import create_run_directories, resolve_saved_models
+from .results import prepare_results
 from . import plots
 from iq_processor.models import ProcessingConfig
 from iq_processor.readers import CSVReader, InputSCSReader, MetadataResolver, fingerprint
@@ -297,7 +298,9 @@ def run_pipeline(config_path, stage="all", models_dir=None, make_plots=True):
                 plots.constellations(b.x[symbols],symbol_predictions,rows,comparison)
                 plots.errors(validation.indices,validation.target,predictions,comparison)
             exports = export_signals(run,config,b,list(models) if config["export"]["models"]=="all" else [winner],results["validation"].selection.indices) if stage=="all" else {}
+            prepared_results = prepare_results(run) if exports else []
             manifest.update(status="completed", winner=winner, selection_metric="validation_nmse_waveform_db", exported=list(exports),
+                prepared_results=prepared_results,
                 zeroed_samples={n:r["zeroed_count"] for n,r in exports.items()})
             lines=["# Reconstruction comparison", "", "Selection uses the full usable validation set; no independent test set.",
                    f"Winner by waveform NMSE: **{winner}**.", "", "| Model | Waveform NMSE (dB) | Symbol NMSE (dB) | Coefficients |", "|---|---:|---:|---:|"]

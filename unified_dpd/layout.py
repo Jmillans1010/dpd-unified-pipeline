@@ -2,11 +2,11 @@
 from pathlib import Path
 
 
-RUN_DIRECTORIES = ("diagnostics", "model_results", "model_comparisons", "outputs")
+RUN_DIRECTORIES = ("diagnostics", "model_results", "model_comparisons", "outputs", "results")
 
 
 def create_run_directories(run):
-    """Create the same four categories for full, preprocessing, and feedback runs."""
+    """Create the artifact categories for full, preprocessing, and feedback runs."""
     for name in RUN_DIRECTORIES:
         (Path(run) / name).mkdir()
     return {name: name for name in RUN_DIRECTORIES}

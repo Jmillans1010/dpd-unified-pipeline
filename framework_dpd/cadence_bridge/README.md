@@ -1,6 +1,6 @@
 # DPD to Cadence adapter
 
-This adapter evaluates saved models and exports stimuli without modifying model coefficients, optimizers, or preprocessing. Python generates the stimulus; Spectre is not launched. The [unified pipeline](../../README.md) adds the four-category run layout, automatic preprocessing, and a 3 V zero-pair policy. The standalone adapter described here rejects out-of-range stimuli instead of zeroing them.
+This adapter evaluates saved models and exports stimuli without modifying model coefficients, optimizers, or preprocessing. Python generates the stimulus; Spectre is not launched. The [unified pipeline](../../README.md) adds the five-category run layout, automatic preprocessing, and a 3 V zero-pair policy. The standalone adapter described here rejects out-of-range stimuli instead of zeroing them.
 
 ## Existing components
 
@@ -113,7 +113,7 @@ Previously consulted Cadence references:
 5. EVM requires verified symbol instants and an appropriate reference. The legacy processor configuration had unverified samples-per-symbol metadata; the unified pipeline resolves this from confirmed source settings and the CSV clock. Do not silently substitute a symbol rate or phase.
 6. Retraining is a separate operation on the new dataset. The adapter does not automatically change coefficients or demonstrate ILA convergence.
 
-The unified `--feedback-dir` command automates the reference lookup and writes feedback diagnostics and comparisons under its four-folder layout.
+The unified `--feedback-dir` command automates the reference lookup and writes feedback diagnostics and comparisons under its five-folder layout.
 
 ## CentOS 7 / Python 3.6.8
 

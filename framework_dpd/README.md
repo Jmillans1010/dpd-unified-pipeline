@@ -1,6 +1,6 @@
 # Standalone DPD framework
 
-This directory preserves the original inverse-model identification framework. For the integrated two-dataset workflow and the four-category run layout, use the repository-root `run_pipeline.py` or `run.ps1` and read the [unified pipeline guide](../README.md).
+This directory preserves the original inverse-model identification framework. For the integrated two-dataset workflow and the five-category run layout, use the repository-root `run_pipeline.py` or `run.ps1` and read the [unified pipeline guide](../README.md).
 
 The standalone entry point remains available from this directory:
 

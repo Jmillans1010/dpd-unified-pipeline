@@ -1,5 +1,12 @@
 # Verification record
 
+## Simulation reference folders: 2026-10-24
+
+- All 11 unified pipeline tests passed, including exact desired I/Q reference extraction and preservation of existing simulation result files.
+- New full runs create a fifth category, `results/`, containing I_in.csv and Q_in.csv for each exported model and the no-DPD baseline. These are desired references, not predistorted stimuli.
+- Reference folders were also prepared for all six exports of the latest existing local-data run. Every time and voltage sample matched its source desired columns exactly, and hashes confirmed that all pre-existing run files were unchanged.
+- No retraining or Cadence simulation was performed when preparing those existing references.
+
 ## English output and directory-layout revision
 
 Verified on 2026-10-21 using the existing Python environment:
